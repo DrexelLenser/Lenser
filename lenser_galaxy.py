@@ -49,7 +49,7 @@ class Galaxy(object):
         .. xc: centroid x coordinate
         .. yc: centroid y coordinate
         .. ns: seric index
-        .. rs: reduced Einstein radius
+        .. rs: characteristic radius
         .. q: semi-major-to-semi-minor axis ratio
         .. phi: orientation angle
         """
@@ -404,10 +404,10 @@ class Image(object):
         elif (type == 'noise_masked'):
             plt.imshow(np.flipud(self.noisemap)*np.flipud(self.maskmap),cmap='gray',origin='lower')
             plt.title(self.getLaTeXName()+' '+r'${\rm masked~noise~map}$')
+        if save == True:
+            plt.savefig(self.getName()+'_'+type+'.pdf', format='pdf')
         if show == True:
             plt.show()
-        elif save == True:
-            plt.savefig(self.getName()+'_'+type+'.pdf', format='pdf')
 
     def getMap(self, type='data'):
         """

@@ -84,7 +84,7 @@ class aimModel(object):
         .. xc: centroid x coordinate
         .. yc: centroid y coordinate
         .. ns: seric index
-        .. rs: reduced Einstein radius
+        .. rs: characteristic radius
         .. q: semi-major-to-semi-minor axis ratio
         .. phi: orientation angle
         """
@@ -688,13 +688,13 @@ class aimModel(object):
         plt.tight_layout()    
         
         if zoom == False:
-            if show == True:
-                plt.show()
-            elif save == True:
+            if save == True:
                 if bruteMin == True:
                     plt.savefig(self.myImage.getName()+'_bruteMin.pdf', format='pdf',bbox_inches='tight')
                 elif bruteMin == False:
                     plt.savefig(self.myImage.getName()+'_localMin.pdf', format='pdf',bbox_inches='tight')
+            if show == True:
+                plt.show()z
         elif zoom == True:
             A = np.sum(self.myImage.getMap(type='mask'))
             q = self.myGalaxy.q
@@ -710,13 +710,13 @@ class aimModel(object):
             ax[1].set_ylim(ybottom,ytop)
             ax[2].set_xlim(xleft,xright)
             ax[2].set_ylim(ybottom,ytop)
-            if show == True:
-                plt.show()
-            elif save == True:
+            if save == True:
                 if bruteMin == True:
                     plt.savefig(self.myImage.getName()+'_bruteMin_zoom.pdf', format='pdf',bbox_inches='tight')
                 elif bruteMin == False:
                     plt.savefig(self.myImage.getName()+'_localMin_zoom.pdf', format='pdf',bbox_inches='tight')
+            if show == True:
+                plt.show()
 
     def empty(self):
         """

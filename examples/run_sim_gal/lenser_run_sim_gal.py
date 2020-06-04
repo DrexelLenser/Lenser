@@ -32,14 +32,17 @@ Module: lenser_run_sim_gal
    the two.
 """
 
-
-
+#myLens = Lens(psi2=[0,0,0],psi3=[0.01,-0.005,0.005,0.002]) 
+#myGalaxy = Galaxy(xc=0,yc=0,ns=0.75,rs=2.,q=1.5,phi=1*np.pi/6,galaxyLens=myLens)
+myLens = Lens(psi2=[0,0,0],psi3=[0.01,-0.003,0.007,-0.003]) 
+myGalaxy = Galaxy(xc=0,yc=0,ns=1.,rs=2.,q=2.,phi=1.25,galaxyLens=myLens)
+"""
 # e.g. of a Lens: first flexion only:
-myLens = Lens(zeros(3),aimModel().flexionToPsi3([0.02,0],[0,0]))
+#myLens = Lens(zeros(3),aimModel().flexionToPsi3([0.02,0],[0,0]))
 
 # Create a Galaxy object
 myGalaxy = Galaxy(xc=0,yc=0,ns=0.5,rs=3*np.sqrt(2.),q=1.,phi=0.,galaxyLens=myLens) 
-
+"""
 # Simulate a real galaxy image
 myImage=myGalaxy.generateImage(100,100,lens=True,I0=1.e3,noise1=1.,noise2=0.1,background=0.,seed=0) 
 

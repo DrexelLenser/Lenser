@@ -19,7 +19,7 @@ Module: lenser_run_real_gal
 
 # Read in image from FITS file. We will choose a galaxy from the COSMOS catalogue
 myImage=Image('../Catalogues/COSMOS/ima_r/COSMOS_2572_r.fits')
-myImage.plot(save=False, show=True)
+myImage.plot(save=True, show=True)
 
 # Generate mask and plot it
 myImage.generateMask(subtractBackground=True)
@@ -40,7 +40,7 @@ myModel.runLocalMinRoutine()
 # Plot the real galaxy image, the best-fit model, and the difference between the two
 myModel.make_plot_compare(save=False, show=True)
 # Zoom in for visual comparison
-myModel.make_plot_compare(zoom=True, save=False, show=True)
+myModel.make_plot_compare(zoom=True, save=True, show=True)
 
 # Reset the parameters to their default values
 myModel.empty()
