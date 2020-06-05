@@ -694,7 +694,7 @@ class aimModel(object):
                 elif bruteMin == False:
                     plt.savefig(self.myImage.getName()+'_localMin.pdf', format='pdf',bbox_inches='tight')
             if show == True:
-                plt.show()z
+                plt.show()
         elif zoom == True:
             A = np.sum(self.myImage.getMap(type='mask'))
             q = self.myGalaxy.q
