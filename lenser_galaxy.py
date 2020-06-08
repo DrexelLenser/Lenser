@@ -167,7 +167,7 @@ def fits_read(name):
     .. If a noisemap is not provided, fits_read will search for a pickle file at 
        the location '../*noise-info.pkl' that contains information in order to 
        calculate one.
-    .. If this pickle file does not exists, then one is calculated based on simple 
+    .. If this pickle file does not exist, then one is calculated based on simple 
        assumptions in Image()
     """
 
