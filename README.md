@@ -20,6 +20,7 @@
 * pickle
 * pandas
 * glob
+* numdifftools
 
 ## Modules
 
