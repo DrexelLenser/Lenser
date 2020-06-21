@@ -4,24 +4,24 @@ Module: lenser_aim
 .. module author: Evan J. Arena <evan.james.arena@drexel.edu>
 """
 
-
-
-from numpy import *
-import numpy as np
 from lenser_galaxy import *
-from scipy import optimize
-import copy
-from scipy.special import gamma
 
+import numpy as np
 import scipy
+from scipy import optimize
+from scipy.special import gamma
 import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
+import numdifftools as nd
 
 import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
 rc('text', usetex=True)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+import copy
+import warnings
 
 verbose=False
 
@@ -154,7 +154,7 @@ class aimModel(object):
         """
         self.I0 = I0   
 
-    def chisq(self, type='standard', calculateI0=True, includeSeg=True): 
+    def chisq(self, reduced=True, type='standard', calculateI0=True, includeSeg=True): 
         """
         Compute the chisquared: 
         .. chisqr = ((I_{model}(i, p) − I_{data}(i))^2)/n(i)^2
@@ -188,14 +188,15 @@ class aimModel(object):
                 chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))**2*w/testImage.getMap())
             elif type == 'Neyman':
                 chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))**2*w/self.myImage.getMap())
-
-        # Calculate reduced chisquared
-        if includeSeg == False:
-            chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask'))
-        if includeSeg == True:
-            chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))
-
-        return chi2_reduced
+        if reduced == True:
+            # Calculate reduced chisquared
+            if includeSeg == False:
+                chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask'))
+            if includeSeg == True:
+                chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))
+            return chi2_reduced
+        elif reduced == False:
+            return chi2
 
     def chisqWrapper(self, parsCurrent, parsFixed, doFlags):
         """
@@ -203,9 +204,19 @@ class aimModel(object):
         .. Used for the local minimizer function.
         """
         pars = np.asarray(parsFixed)
-        pars[where(doFlags==1)] = np.asarray(parsCurrent)
+        pars[np.where(doFlags==1)] = np.asarray(parsCurrent)
         self.setPars(pars)
         return self.chisq()
+
+    def size(self):
+        """
+        Return the characteristic size for a galaxy
+          a = sqrt(Q11+Q22)
+        """
+        Q11 = self.myImage.getMoments('Q11')
+        Q22 = self.myImage.getMoments('Q22')
+        a = np.sqrt(abs(Q11+Q22))
+        return a
 
     def rs_Q(self, ns):
         """
@@ -244,17 +255,17 @@ class aimModel(object):
         Q2222 = hexadecapole[4]
 
         # Define the Flexion estimators:
-        F = zeros(2)
-        G = zeros(2)
+        F = np.zeros(2)
+        G = np.zeros(2)
 
         # Define the Third-order HOLICs:
         #gamma = np.zeros(2)
-        zeta = zeros(2)
-        delta = zeros(2)
+        zeta = np.zeros(2)
+        delta = np.zeros(2)
 
         # Useful definitions
-        eta = zeros(2)
-        lambd = zeros(2)
+        eta = np.zeros(2)
+        lambd = np.zeros(2)
         xi = Q1111 + 2.*Q1122 + Q2222
 
         #; Compute gam
@@ -276,9 +287,9 @@ class aimModel(object):
             #   x = (F1, F2, G1, G2)
             # and y is the measure of the third-order HOLICs:
             #   y = (xi1, xi2, delta1, delta2)
-            M = zeros((4, 4))
-            y = zeros(4)
-            x = zeros(4)
+            M = np.zeros((4, 4))
+            y = np.zeros(4)
+            x = np.zeros(4)
 
             y[0] = zeta[0]
             y[1] = zeta[1]
@@ -339,8 +350,8 @@ class aimModel(object):
             M[3][3] = 0.25*(3.)
             M[3][3] -= 3.*(-2.*Q11*Q22 + Q11**2. + Q22**2. + 4.*Q12**2.)/(4.*xi)
 
-            M_inv = linalg.inv(M)
-            x = matmul(M_inv, y)
+            M_inv = np.linalg.inv(M)
+            x = np.matmul(M_inv, y)
 
             F[0] = x[0]
             F[1] = x[1]
@@ -374,7 +385,7 @@ class aimModel(object):
         psi122 = (1./2.)*(F1 - G1)
         psi222 = (1./2.)*(3.*F2 - G2)
 
-        psi3 = zeros(4)
+        psi3 = np.zeros(4)
         psi3[0] = psi111
         psi3[1] = psi112
         psi3[2] = psi122
@@ -399,8 +410,8 @@ class aimModel(object):
         psi122 = psi3[2]
         psi222 = psi3[3]
 
-        F = zeros(2)
-        G = zeros(2)
+        F = np.zeros(2)
+        G = np.zeros(2)
 
         F[0] = (1./2.)*(psi111 + psi122)
         F[1] = (1./2.)*(psi112 + psi222)
@@ -416,14 +427,14 @@ class aimModel(object):
         .. Kappa is a float and gamma is a 1x2 numpy array of the form:
              gamma = [gamma1, gamma2]
         """
-        gamma1=gamma[0]
-        gamma2=gamma[1]
+        gamma1 = gamma[0]
+        gamma2 = gamma[1]
 
         psi11 = kappa + gamma1
         psi12 = gamma2
         psi22 = kappa - gamma1
 
-        psi2 = zeros(3)
+        psi2 = np.zeros(3)
         psi2[0] = psi11
         psi2[1] = psi12
         psi2[2] = psi22
@@ -538,7 +549,7 @@ class aimModel(object):
 
         else:
             # Get (subset of) parameter space
-            parsCurrent = copy.deepcopy(self.parsWrapper()[where(doFlags==1)]) 
+            parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(doFlags==1)]) 
             # Chisquared minimization
             out = optimize.minimize(self.chisqWrapper, parsCurrent, method='L-BFGS-B', args=(pars0,doFlags),
                                     bounds=((-1e3,1e3),(-1e3,1e3),(1e-1,5e1),(1e-4,1e2),(1,1e2),
@@ -546,11 +557,12 @@ class aimModel(object):
                                     options={'disp':verbose,'maxiter':600})
 
 
-            pars = asarray(pars0)
-            pars[where(doFlags==1)] = asarray(out.x)
+            pars = np.asarray(pars0)
+            pars[np.where(doFlags==1)] = np.asarray(out.x)
             self.setPars(pars)
             I0 = self.calculateI0()
             self.setI0(I0)
+
             print('L-BFGS-B local minimzation best-fit values:')
             print('...','[','xc =',pars[0],']')
             print('...','[','yc =',pars[1],']')
@@ -566,20 +578,9 @@ class aimModel(object):
             print('...','[','psi,122 =',pars[11],']')
             print('...','[','psi,222 =',pars[12],']')
             print('...','[','Chisqr =',self.chisq(),']')
+                
 
-    def runLocalMinRoutine(self):
-        """
-        First, call simpleStart() to estimate brightness moments from an unweighted quadrupole and hexadecapole 
-        calculation to be used as an initial guess for the galaxy model. With initialized parameter 
-        estimates provided by the measured light moments, perform a two-step chisquared minimization using localMin():
-        (i) first minimizing over the initially coupled subspace {ns, rs} (ii) a final full ten-parameter space local 
-        minimization (where doFlags are zero for the psi2 terms by default, due to the shear/ellipticity degeneracy.
-        """
-        self.simpleStart()
-        self.localMin(bruteMin=True)
-        self.localMin()
-
-    def globalMin(self,doFlags=ones(13)):
+    def globalMin(self,doFlags=np.array([1,1,1,1,1,1,0,0,0,1,1,1,1])):
         """
         We include the option for global minimization rather than a two-step local minimzation.
         This method is not necessarily recommended as superior, as the much larger computation time
@@ -592,11 +593,11 @@ class aimModel(object):
         """
         pars0 = copy.deepcopy(self.parsWrapper())
         # Get (subset of) parameter space
-        parsCurrent = copy.deepcopy(self.parsWrapper()[where(doFlags==1)]) 
+        parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(doFlags==1)]) 
         # Chisquared minimization
         out = optimize.basinhopping(self.chisqWrapper, parsCurrent, minimizer_kwargs={'method':'L-BFGS-B','args':(pars0,doFlags)})
-        pars = asarray(pars0)
-        pars[where(doFlags==1)] = asarray(out.x)
+        pars = np.asarray(pars0)
+        pars[np.where(doFlags==1)] = np.asarray(out.x)
         self.setPars(pars)
         I0 = self.calculateI0()
         self.setI0(I0)
@@ -615,6 +616,72 @@ class aimModel(object):
         print('...','[','psi,122 =',pars[11],']')
         print('...','[','psi,222 =',pars[12],']')
         print('...','[','Chisqr =',self.chisq(),']')
+
+    def getParErrors(self, doFlags=np.array([1,1,1,1,1,1,0,0,0,1,1,1,1])):
+        """
+        Returns the covariance matrix and 1sigma errors from the chisquared
+        best fit.
+        .. The covariance matrix has dimensions of len(doFlags)xlen(doFlags)
+           whereas the errors list spans the entire parameter space (zeros are
+           inserted where doFlags=0.
+        """
+        pars0 = copy.deepcopy(self.parsWrapper())
+        parsBest = copy.deepcopy(self.parsWrapper())[np.where(doFlags==1)]
+        chisqr_best = self.chisq()
+
+        def modelWrapper(p):
+            parsCurrent = pars0
+            parsCurrent[np.where(doFlags==1)] = np.asarray(p)
+            self.setPars(parsCurrent)
+            chisqr = self.chisq(reduced=False,calculateI0=False)
+            parsCurrent[np.where(doFlags==1)] = parsBest
+            self.setPars(parsCurrent)
+            return chisqr
+
+        # Suppress numdifftools warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            hessian_mat = nd.Hessian(modelWrapper)(parsBest)
+            cov_mat = np.linalg.inv(hessian_mat)
+            errs = []
+            for i in range(len(parsBest)):
+                err = np.sqrt(abs(cov_mat[i,i]))
+                errs.append(err)
+
+        #Put zeros in for errors where doFlags=0
+        errors = np.zeros(len(pars0))
+        errors[np.where(doFlags==1)] = errs
+
+        # Print 1sigma errors
+        print('1sigma errors on parameters:')
+        print('...','[','error on xc =',errors[0],']')
+        print('...','[','error on yc =',errors[1],']')
+        print('...','[','error on ns =',errors[2],']')
+        print('...','[','error on rs =',errors[3],']')  
+        print('...','[','error on q =',errors[4],']')
+        print('...','[','error on phi =',errors[5],']') 
+        print('...','[','error on psi,11 =',errors[6],']')
+        print('...','[','error on psi,12 =',errors[7],']')
+        print('...','[','error on psi,22 =',errors[8],']')
+        print('...','[','error on psi,111 =',errors[9],']')
+        print('...','[','error on psi,112 =',errors[10],']')
+        print('...','[','error on psi,122 =',errors[11],']')
+        print('...','[','error on psi,222 =',errors[12],']')
+
+        # Return covariance matrix and 1sigma errors
+        return cov_mat, errors
+
+    def runLocalMinRoutine(self):
+        """
+        First, call simpleStart() to estimate brightness moments from an unweighted quadrupole and hexadecapole 
+        calculation to be used as an initial guess for the galaxy model. With initialized parameter 
+        estimates provided by the measured light moments, perform a two-step chisquared minimization using localMin():
+        (i) first minimizing over the initially coupled subspace {ns, rs} (ii) a final full ten-parameter space local 
+        minimization (where doFlags are zero for the psi2 terms by default, due to the shear/ellipticity degeneracy.
+        """
+        self.simpleStart()
+        self.localMin(bruteMin=True)
+        self.localMin()
 
     def checkFit(self):
         """
@@ -733,7 +800,7 @@ class aimModel(object):
         phi = emptyGalaxy.phi
         psi2 = emptyLens.psi2
         psi3 = emptyLens.psi3
-        pars = asarray([xc,yc,ns,rs,q,phi,
+        pars = np.asarray([xc,yc,ns,rs,q,phi,
                         psi2[0],psi2[1],psi2[2],
                         psi3[0],psi3[1],psi3[2],psi3[3]])
         self.setPars(pars)

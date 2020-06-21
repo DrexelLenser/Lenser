@@ -30,7 +30,7 @@ Module: lenser_run_sim_gal
 .. Plots are created for the simulated galaxy image, the elliptical mask, and the noisemap.
 .. A plot is created comparing the simualted galaxy image, the model, and the difference between
    the two.
-""")
+"""
 
 # e.g. of a Lens:
 myLens = Lens(psi2=[0,0,0],psi3=[0.01,-0.003,0.007,-0.003]) 
@@ -68,6 +68,12 @@ myImage.plot(type='noise',save=True)
 
 # Run local minimization
 myModel.runLocalMinRoutine()
+
+# Check for a realistic fit
+myModel.checkFit()
+
+# Return 1sigma errors on parameters from chisquared best-fit
+myModel.getParErrors()
 
 # Plot the simulated galaxy, the best-fit model, and the difference between the two
 myModel.make_plot_compare(save=True)

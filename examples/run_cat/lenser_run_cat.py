@@ -24,13 +24,18 @@ Module: lenser_run_cat
 
 
 # Catalogue choice.  One could choose either 'COSMOS' or 'EFIGI'
-cat_choice = 'EFIGI'
+cat_choice = 'COSMOS'
+
+# Option to return error on parameters from chisquared best-fit.
+# .. If set to False, the relevant dataframe columns are populated
+# .. with "None"
+getParErrors = True
 
 # If no extra condition is required, use condition = ''
-# - You may wish to have condition = _PSF, say, to 
-# - differentiate between runs that do or do not 
-# - convolve a PSF
-# - e.g. condition = '_F814w_COSMOS-noisemaps_no-PSF'
+# .. You may wish to have condition = _PSF, say, to 
+# .. differentiate between runs that do or do not 
+# .. convolve a PSF
+# .. e.g. condition = '_F814w_COSMOS-noisemaps_no-PSF'
 condition = ''
 
 def get_image_data(name, path):
@@ -66,8 +71,11 @@ else:
     print('Error! Need a catalog choice')
 
 # Parameters for pickle file 
-output_params = ['x_c','y_c','ns','r_s','q','phi',                                    # Galaxy fit parameters
-                 'psi_11','psi_12','psi_22','psi_111','psi_112','psi_122','psi_222',  # Lensing fit parameters
+output_params = ['xc','yc','ns','rs','q','phi',                                       # Galaxy fit parameters
+                 'psi11','psi12','psi22','psi111','psi112','psi122','psi222',         # Lensing fit parameters
+                 'err_xc','err_yc','err_ns','err_rs','err_q','err_phi',               # Error on galaxy fit parameters
+                 'err_psi11','err_psi12','err_psi22',                                 # Error on lensing fit parameters
+                 'err_psi111','err_psi112','err_psi122','err_psi222',                 # --
                  'rchi2',                                                             # chisquared of fit
                  'F1_fit', 'F2_fit',                                                  # Flexion from fit                                       
                  'a','Q111','Q112','Q122','Q222',                                     # Image size and octupole moments
@@ -118,6 +126,12 @@ for _ in ID_list:
         # .. Run local minimization
         myModel.runLocalMinRoutine()
 
+        # .. Return 1sigma errors on parameters from chisquared best-fit
+        if getParErrors == False:
+            errors = np.full(len(myModel.parsWrapper()), None)
+        elif getParErrors == True:
+            cov, errors = myModel.getParErrors()
+
         # .. Check fit
         checkFit_flag_val = 0
         checkFit_flag_val = myModel.checkFit()
@@ -128,6 +142,7 @@ for _ in ID_list:
         F2_fit = F[1]
 
         # .. Get size, octupole moments
+        a = myModel.size()
         order2,order3,order4 = myImage.getMoments('order2,order3,order4')
         quadrupole = order2
         octupole = order3
@@ -138,7 +153,6 @@ for _ in ID_list:
         Q112 = octupole[1]
         Q122 = octupole[2]
         Q222 = octupole[3]
-        a = np.sqrt(abs(Q11+Q22))
 
         # .. Check to see if any image moments are NaNs:
         # .. if they are, then terminate loop
@@ -158,7 +172,7 @@ for _ in ID_list:
         noisemap_masked_kurtosis = kurtosis(myNoise_masked.flatten())   
 
         # .. Get values to save
-        fit_pars = myModel.parsWrapper()
+        fit_pars = np.append(myModel.parsWrapper(), errors)
         other_pars = np.array((myModel.chisq(),
                                F1_fit, F2_fit,
                                a, Q111, Q112, Q122, Q222,

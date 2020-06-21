@@ -37,6 +37,12 @@ myModel = aimModel(myImage)
 # Run local minimization
 myModel.runLocalMinRoutine()
 
+# Return 1sigma errors on parameters from chisquared best-fit
+myModel.getParErrors()
+
+# Check for a realistic fit
+myModel.checkFit()
+
 # Plot the real galaxy image, the best-fit model, and the difference between the two
 myModel.make_plot_compare(save=False, show=True)
 # Zoom in for visual comparison

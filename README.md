@@ -1,13 +1,14 @@
 # Lenser 
 
-`Lenser` is a fast, open-source, minimal-dependency Python tool for estimating lensing signals from real survey data or realistically simulated images. `Lenser` employs a hybrid of image moment analysis and an Analytic Image Modeling (AIM) analysis.
+| `Lenser`:  | A tool for measuring weak gravitational flexion |
+|------------|-------------------------------------------------|
+| Author:    | Evan J. Arena                                   |
+
+`Lenser` is a fast, open-source, minimal-dependency Python tool for estimating weak gravitational lensing signals, particularly flexion, from real survey data or realistically simulated images. `Lenser` employs a hybrid of image moment analysis and an Analytic Image Modeling (AIM) analysis.
 
 * (c) Evan J. Arena (Drexel University Department of Physics), 2020.
-
 * For questions, please email `evan.james.arena@drexel.edu.`
-
 * If you wish to use `Lenser`, please cite [arXiv:2006.03506](https://arxiv.org/abs/2006.03506).
-
 * Significant contributions to this work have been made by Joseph M. Fabritius II and David M. Goldberg of Drexel University.
 
 
