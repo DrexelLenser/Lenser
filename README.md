@@ -10,7 +10,7 @@
 
 * (c) Evan J. Arena (Drexel University Department of Physics), 2020.
 * For questions, please email `evan.james.arena@drexel.edu.`
-* If you wish to use `Lenser`, please cite [arXiv:2006.03506](https://arxiv.org/abs/2006.03506).
+* If you wish to use `Lenser`, please cite our paper [arXiv:2006.03506](https://arxiv.org/abs/2006.03506).  If you wish to access the data from this paper, visit [DrexelLenser/arXiv-2006.03506](https://github.com/DrexelLenser/arXiv-2006.03506).
 * Significant contributions to this work have been made by Joseph M. Fabritius II and David M. Goldberg of Drexel University.
 
 
@@ -103,7 +103,7 @@
 	
 ## Examples 
 
-There are four examples for using `Lenser` provided in the `Lenser/examples/` directory.  There is also a `Lenser/Catalogues/` directory containing five images each from the EFIGI and COSMOS catalogues (for information about these catalogues, see [arXiv:2006.03506](https://arxiv.org/abs/2006.03506)), along with prep files (contains information about redshift, u-r, etc.), segmentation maps, PSF maps, and noisemaps (noisemaps are provided for COSMOS only, not EFIGI).
+There are a few examples for using `Lenser` provided in the `Lenser/examples/` directory.  There is also a `Lenser/Catalogues/` directory containing five images each from the EFIGI and COSMOS catalogues (for information about these catalogues, see [arXiv:2006.03506](https://arxiv.org/abs/2006.03506)), along with prep files (contains information about redshift, u-r, etc.), segmentation maps, PSF maps, and noisemaps (noisemaps are provided for COSMOS only, not EFIGI).
 
 * `lenser_run_sim_gal.py`: Simulates a galaxy image and then runs it through `Lenser` 
   * One can use `Lenser` in order to simulate a postage stamp of a galaxy. In this case, the galaxy 
@@ -141,10 +141,21 @@ There are four examples for using `Lenser` provided in the `Lenser/examples/` di
    exported to the path 
      `Lenser/examples/Catalogues/Simulated_(insert time)/`
 
-* `lenser_run_cat`: Runs an entire catalogue of galaxy images through `Lenser` and exports pickle file of bestfit parameters
+* `lenser_run_cat.py`: Runs an entire catalogue of galaxy images through `Lenser` and exports pickle file of bestfit parameters
   * This script will import one of the Catalogues in the Catalougues folder and run all of the images through `Lenser`.
   * A prep file for a catalogue is required for object identification.
   * Best-fit parameters are dynamically saved in dataframe form to a pickle file.
 
-
+* `covariance.py`: Calculates a covariance matrix for the `Lenser` parameter space     
+  * Since `Lenser` is a forward-modeling code, the user can specify a set of input parameters and 
+   create an image of a lensed galaxy. It is, therefore, possible to use `Lenser` in order to 
+   compute a covariance matrix for our parameter space by simulating an ensemble of postage 
+   stamp images (a "stamp collection") with known input parameters and noise, and 
+   then running each of the postage stamps through `Lenser` for fitting. To test the response of 
+   `Lenser` to noise, each postage stamp has identical input parameters and noise maps, but 
+   additional, unique Gaussian noise injected into each.
+  * This module first creates a stamp collection, computes the covariance matrix, and then creates
+   a triangle plot of 1- and 2-sigma error ellipses, along with the fiducial parameters indicated
+   by a white plus sign.
+  * Instances of this class are given in the scripts `covariance_run_COSMOS-like_no_lensing.py`, `covariance_run_EFIGI-like_no_lensing.py`, `covariance_run_COSMOS-like_with_lensing.py`, and `covariance_run_EFIGI-like_with_lensing.py`.
 

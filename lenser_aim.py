@@ -191,9 +191,11 @@ class aimModel(object):
         if reduced == True:
             # Calculate reduced chisquared
             if includeSeg == False:
-                chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask'))
+                dof = np.sum(self.myImage.getMap(type='mask'))-len(self.parsWrapper())
+                chi2_reduced = chi2/dof
             if includeSeg == True:
-                chi2_reduced = chi2/np.sum(self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))
+                dof = np.sum(self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))-len(self.parsWrapper())
+                chi2_reduced = chi2/dof
             return chi2_reduced
         elif reduced == False:
             return chi2
@@ -420,7 +422,7 @@ class aimModel(object):
 
         return F, G
         
-    def kappaAndGammaToPsi2(kappa, gamma):
+    def kappaAndGammaToPsi2(self, kappa, gamma):
         """
         Convert the convergence and shear into the psi2 array.
         .. Takes as an input kappa and gamma.  
@@ -552,7 +554,7 @@ class aimModel(object):
             parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(doFlags==1)]) 
             # Chisquared minimization
             out = optimize.minimize(self.chisqWrapper, parsCurrent, method='L-BFGS-B', args=(pars0,doFlags),
-                                    bounds=((-1e3,1e3),(-1e3,1e3),(1e-1,5e1),(1e-4,1e2),(1,1e2),
+                                    bounds=((-1e3,1e3),(-1e3,1e3),(1e-1,5e1),(1e-10,1e2),(1,1e2),
                                             (None,None),(None,None),(None,None),(None,None),(None,None)),
                                     options={'disp':verbose,'maxiter':600})
 
@@ -642,10 +644,18 @@ class aimModel(object):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             hessian_mat = nd.Hessian(modelWrapper)(parsBest)
+            # Avoid error where NaNs are returned:
+            #hessian_mat += np.diag((1e-30)*np.ones(len(parsBest)))
+            #hessian_mat += (1e-30)*np.ones((len(parsBest),len(parsBest)))
+            #print(hessian_mat)
+            id = np.where(np.isnan(hessian_mat))
+            hessian_mat[id] = 1.e30
             cov_mat = np.linalg.inv(hessian_mat)
+            #print(cov_mat)
             errs = []
             for i in range(len(parsBest)):
                 err = np.sqrt(abs(cov_mat[i,i]))
+                #err = 1/np.sqrt(abs(hessian_mat[i,i]))
                 errs.append(err)
 
         #Put zeros in for errors where doFlags=0

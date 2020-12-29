@@ -46,7 +46,7 @@ myModel.checkFit()
 # Plot the real galaxy image, the best-fit model, and the difference between the two
 myModel.make_plot_compare(save=False, show=True)
 # Zoom in for visual comparison
-myModel.make_plot_compare(zoom=True, save=True, show=True)
+myModel.make_plot_compare(zoom=True, save=False, show=True)
 
 # Reset the parameters to their default values
 myModel.empty()

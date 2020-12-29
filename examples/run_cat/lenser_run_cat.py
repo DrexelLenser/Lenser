@@ -24,7 +24,9 @@ Module: lenser_run_cat
 
 
 # Catalogue choice.  One could choose either 'COSMOS' or 'EFIGI'
-cat_choice = 'COSMOS'
+#cat_choice = 'EFIGI'
+#cat_choice = 'Simulated_3_9_2020_23:26:51' #EFIGI-like
+cat_choice = 'Simulated_23_8_2020_22:13:36' #COSMOS-like
 
 # Option to return error on parameters from chisquared best-fit.
 # .. If set to False, the relevant dataframe columns are populated
@@ -61,12 +63,20 @@ if cat_choice == 'EFIGI':
     path_to_cat = '../Catalogues/EFIGI/'
     prep_file = 'EFIGI_catalog_w_color.pkl'
     im_fold = 'ima_r/'
+    band = '_r'
     input_params = ['name','class','z','u-r']
 elif cat_choice == 'COSMOS':
     path_to_cat = '../Catalogues/COSMOS/'
     prep_file = 'COSMOS-morph-info-rev1.pkl'
     im_fold = 'ima_r/'
+    band = '_r'
     input_params = ['name','class','z','U-R']
+elif 'Simulated' in cat_choice:
+    path_to_cat = '../Catalogues/'+cat_choice+'/'
+    prep_file = cat_choice+'_info.pkl'#glob.glob('Simulated*'+'_info.pkl')
+    im_fold = 'ima/'
+    band = ''
+    input_params = ['name','class','z','u-r']
 else:
     print('Error! Need a catalog choice')
 
@@ -76,6 +86,7 @@ output_params = ['xc','yc','ns','rs','q','phi',                                 
                  'err_xc','err_yc','err_ns','err_rs','err_q','err_phi',               # Error on galaxy fit parameters
                  'err_psi11','err_psi12','err_psi22',                                 # Error on lensing fit parameters
                  'err_psi111','err_psi112','err_psi122','err_psi222',                 # --
+                 'I0',                                                                # I0
                  'rchi2',                                                             # chisquared of fit
                  'F1_fit', 'F2_fit',                                                  # Flexion from fit                                       
                  'a','Q111','Q112','Q122','Q222',                                     # Image size and octupole moments
@@ -107,7 +118,7 @@ for _ in ID_list:
         print('Running Lenser')
 
         # .. Get image
-        myImage = Image(path_to_cat+im_fold+imname+'_r.fits')
+        myImage = Image(path_to_cat+im_fold+imname+band+'.fits')
 
         # .. Generate mask
         myImage.generateMask(subtractBackground=True)
@@ -157,6 +168,8 @@ for _ in ID_list:
         # .. Check to see if any image moments are NaNs:
         # .. if they are, then terminate loop
         if np.isnan(a) or np.isnan(Q111) or np.isnan(Q112) or np.isnan(Q122) or np.isnan(Q222):
+            # .. Empty model
+            myModel.empty()
             continue
 
         # .. Get flexion from HOLICs
@@ -173,7 +186,8 @@ for _ in ID_list:
 
         # .. Get values to save
         fit_pars = np.append(myModel.parsWrapper(), errors)
-        other_pars = np.array((myModel.chisq(),
+        other_pars = np.array((myModel.I0,
+                               myModel.chisq(),
                                F1_fit, F2_fit,
                                a, Q111, Q112, Q122, Q222,
                                F1_HOLICs, F2_HOLICs,
@@ -185,27 +199,27 @@ for _ in ID_list:
 
         # .. Empty model
         myModel.empty()
-
-        # Export values to pickle file
-
-        if cat_choice=='EFIGI':imname=imname.split('_')[0]
-
-        # .. Build dictionary for quick, dynamic dataframe building per iteration
-        for i,j in zip(col_list,range(len(col_list))):
-            if i in output_params: #if output parameter, append value appropriately
-                arrs[j].append(output_vals[abs(len(input_params)-j)])
-            else:
-                sel_id = prep_frame[prep_frame.name==imname].index[0]
-                prep_val = prep_frame[i].loc[sel_id]
-                arrs[j].append(prep_val)
-                
-        # .. Build the dataframe
-        dat = {i:arrs[j] for i,j in zip(col_list,range(len(col_list)))}
-        out_frame = pd.DataFrame(data=dat,columns=col_list)
-        out_frame.to_pickle(path_to_cat+output_filename+'-'+str(len(ID_list))+'_objects'+condition+'.pkl')
         
     except:
         print('Error, skipping')
+        output_vals = np.nan*np.ones(len(output_params))
+
+    # Export values to pickle file
+
+    if cat_choice=='EFIGI':imname=imname.split('_')[0]
+
+    # .. Build dictionary for quick, dynamic dataframe building per iteration
+    for i,j in zip(col_list,range(len(col_list))):
+        if i in output_params: #if output parameter, append value appropriately
+            arrs[j].append(output_vals[abs(len(input_params)-j)])
+        else:
+            sel_id = prep_frame[prep_frame.name==imname].index[0]
+            prep_val = prep_frame[i].loc[sel_id]
+            arrs[j].append(prep_val)
+    # .. Build the dataframe
+    dat = {i:arrs[j] for i,j in zip(col_list,range(len(col_list)))}
+    out_frame = pd.DataFrame(data=dat,columns=col_list)
+    out_frame.to_pickle(path_to_cat+output_filename+'-'+str(len(ID_list))+'_objects'+condition+'.pkl')
 
     # Print progress bar
     update_progress('Lenser Analysis - '+cat_choice, init/float(len(ID_list)))
