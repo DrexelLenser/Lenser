@@ -26,7 +26,9 @@ Module: lenser_run_cat
 # Catalogue choice.  One could choose either 'COSMOS' or 'EFIGI'
 #cat_choice = 'EFIGI'
 #cat_choice = 'Simulated_3_9_2020_23:26:51' #EFIGI-like
-cat_choice = 'Simulated_23_8_2020_22:13:36' #COSMOS-like
+#cat_choice = 'Simulated_23_8_2020_22:13:36' #COSMOS-like
+
+cat_choice = 'metacalibration-gal-coords-objects0-999-size-0.2-arcmin'
 
 # Option to return error on parameters from chisquared best-fit.
 # .. If set to False, the relevant dataframe columns are populated
@@ -76,6 +78,12 @@ elif 'Simulated' in cat_choice:
     prep_file = cat_choice+'_info.pkl'#glob.glob('Simulated*'+'_info.pkl')
     im_fold = 'ima/'
     band = ''
+    input_params = ['name','class','z','u-r']
+elif cat_choice == 'metacalibration-gal-coords-objects0-999-size-0.2-arcmin':
+    path_to_cat = '../../../../../Drexel/Dissertation/DES/Images/metacalibration-gal-coords-objects0-999-size-0.2-arcmin/2c3d5584bdda4988ba2567eb0d4feed2/'
+    prep_file = cat_choice+'_info.pkl'
+    im_fold = 'ima_r/'
+    band = '_r'
     input_params = ['name','class','z','u-r']
 else:
     print('Error! Need a catalog choice')

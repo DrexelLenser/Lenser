@@ -108,9 +108,9 @@ F2 = (1.e-3)/np.sqrt(2)
 # .. .. angle of flexion
 phi_F = np.arctan2(F2,F1)
 # .. G1
-G1 = -((3*np.cos(3*phi_F))/np.cos(phi_F))*F1
+G1 = ((3*np.cos(3*phi_F))/np.cos(phi_F))*F1
 # .. G2
-G2 = -((3*np.sin(3*phi_F))/np.sin(phi_F))*F2
+G2 = ((3*np.sin(3*phi_F))/np.sin(phi_F))*F2
 # .. psi,111
 psi111 = (1./2.)*(3.*F1 + G1)
 # .. psi,112

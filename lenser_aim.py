@@ -557,8 +557,6 @@ class aimModel(object):
                                     bounds=((-1e3,1e3),(-1e3,1e3),(1e-1,5e1),(1e-10,1e2),(1,1e2),
                                             (None,None),(None,None),(None,None),(None,None),(None,None)),
                                     options={'disp':verbose,'maxiter':600})
-
-
             pars = np.asarray(pars0)
             pars[np.where(doFlags==1)] = np.asarray(out.x)
             self.setPars(pars)
@@ -743,9 +741,9 @@ class aimModel(object):
         difference = myImage-myModel
         # Make plot
         f, ax = plt.subplots(1, 3)
-        im1 = ax[0].imshow(np.flipud(myImage),cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage)) 
-        im2 = ax[1].imshow(np.flipud(myModel),cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage))
-        im3 = ax[2].imshow(np.flipud(difference),cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage))
+        im1 = ax[0].imshow(myImage,cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage)) 
+        im2 = ax[1].imshow(myModel,cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage))
+        im3 = ax[2].imshow(difference,cmap='gray',origin='lower',vmin=np.min(difference),vmax=np.max(myImage))
         ax[0].set_title(self.myImage.getLaTeXName())
         ax[1].set_title(r'${\rm \texttt{Lenser} \, Model}$')
         ax[2].set_title(r'${\rm Residual}$')

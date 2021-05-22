@@ -205,62 +205,71 @@ def fits_read(name):
     # .. extraneous foreground object, 3 for the second, etc.), such as stars, bad pixels, etc. Lenser
     # .. then creates a segmentation mask, wherein the background and galaxy get values of 1, and
     # .. all other foreground objects get a value of 0 – i.e., they are masked out. 
+
     if os.path.exists(seg):
-
         # Read in segmentation map
-        seg_map = fits.open(seg)[0].data
-        seg_mask = seg_map*0
-        id0 = np.where((seg_map == 0))
-        id1 = np.where((seg_map == 1))
+        try:
+            seg_map = fits.open(seg)['SCI'].data
+        except:
+            seg_map = fits.open(seg)['PRIMARY'].data
 
-        # Define segmentaton mask
-        seg_mask[id0] = 1
-        seg_mask[id1] = 1
 
-        # Background mask corresponds to the background pixels only
-        bg_mask = seg_map*0
-        bg_mask[id0] = 1
+        # Get the segmentation map values corresponding to each object
+        seg_ids = np.unique(seg_map)
+        # Get background ids
+        bg_val = 0
+        id_bg = np.where(seg_map == bg_val)
+        # Get indices for the center of the stamp
+        seg_xc = int(seg_map.shape[0]/2)
+        seg_yc = int(seg_map.shape[1]/2)
+        obj_val = seg_map[seg_xc][seg_yc]
+        id_obj = np.where(seg_map == obj_val)
 
         # Object mask corresponds to the object pixels only
         obj_mask = seg_map*0
-        obj_mask[id1] = 1
-        
-        # Run friends-of-friends algorithm to ensure that all pixels in the object mask are contiguous.
-        # First get rid of pixels near the edges with obj_mask=1
-        for k in range(6):
-            for i in range(obj_mask.shape[0]):
-                for j in range(obj_mask.shape[0]):
-                    if obj_mask[i][j] == 1:
-                        if i+(k+1) > obj_mask.shape[0]:
-                             obj_mask[i][j] = 0
-                        elif i-(k+1) < 0:
-                             obj_mask[i][j] = 0
-                        elif j+(k+1) > obj_mask.shape[1]:
-                             obj_mask[i][j] = 0
-                        elif j-(k+1) < 0:
-                             obj_mask[i][j] = 0
-        # Now require contiguity
-        for k in range(5):
-            for i in range(obj_mask.shape[0]):
-                for j in range(obj_mask.shape[0]):
-                    if obj_mask[i][j] == 1:
-                        if obj_mask[i-(k+1)][j] == 1:
-                             obj_mask[i][j] = 1
-                        elif obj_mask[i+(k+1)][j] == 1:
-                             obj_mask[i][j] = 1
-                        elif obj_mask[i][j-(k+1)] == 1:
-                             obj_mask[i][j] = 1
-                        elif obj_mask[i][j+(k+1)] == 1:
-                             obj_mask[i][j] = 1
-                        else:
-                            obj_mask[i][j] = 0
+        obj_mask[id_obj] = 1
 
-        # Define final segmentation mask after contiguity check
-        id0 = np.where((seg_map == 0))
-        id1 = np.where((obj_mask == 1))
+        # Background mask corresponds to the background pixels only
+        bg_mask = seg_map*0
+        bg_mask[id_bg] = 1
+
+        # Define segmentation mask
         seg_mask = seg_map*0
-        seg_mask[id0] = 1
-        seg_mask[id1] = 1
+        seg_mask[id_obj] = 1
+        seg_mask[id_bg] = 1
+        
+        # If there are extraneous objects within the stamp, create an uberseg mask
+        if len(seg_ids) > 2:
+            # .. Initialize uberseg mask
+            ubserseg_mask = seg_map*0
+            # .. Get id for all extraneous object pixels
+            id_extr = np.where((seg_map != bg_val) & (seg_map != obj_val))
+            # .. Get x,y coordinates for all object pixels
+            x_obj, y_obj = id_obj[0][:], id_obj[1][:]
+            # .. Get x,y coordinates for all extraneous object pixels
+            x_extr, y_extr = id_extr[0][:], id_extr[1][:]
+
+            # .. Uberseg:
+            for i in range(seg_map.shape[0]):
+                for j in range(seg_map.shape[1]):
+                    # .. Get distance of pixel (i,j) from every pixel in the object
+                    d_obj = np.sqrt((x_obj-i)**2.+(y_obj-j)**2.)              
+                    # .. Get distance of pixel (i,j) from every pixel in every extraneous object
+                    d_extr = np.sqrt((x_extr-i)**2.+(y_extr-j)**2.)    
+                    # .. Get minimum distance in each array
+                    d_obj_min = np.min(d_obj)
+                    d_extr_min = np.min(d_extr)
+                    # .. If pixel is closer to main object than extranous object, include in uberseg
+                    if d_obj_min <= d_extr_min: 
+                        ubserseg_mask[i][j] = 1
+                    else:
+                        ubserseg_mask[i][j] = 0
+        else:
+            ubserseg_mask = 1
+
+        # Full segmentation mask
+        seg_mask*=ubserseg_mask
+            
     else:
         # If a segmentation map is absent, the assumption is that the input postage stamp includes only 
         # the background and galaxy, and hence all pixels are viable.
@@ -283,22 +292,26 @@ def fits_read(name):
     # (we will again consider the e.g. of the 'r' band:)
     #  name    gain_r    sky_r    skyErr_r    darkVariance_r
     if rms_file is None:
-        gal_name_w_band = name.split('/')[-1].split('.fits')[0]
-        path = name.split(gal_name_w_band)[0]
-        gal_name = gal_name_w_band.split('_r')[0]
+        try:
+            gal_name_w_band = name.split('/')[-1].split('.fits')[0]
+            path = name.split(gal_name_w_band)[0]
+            gal_name = gal_name_w_band.split('_r')[0]
 
-        # Get noise info file
-        noise_info_file = glob.glob(path+'*noise-info_'+band+'.pkl')[0]
+            # Get noise info file
+            noise_info_file = glob.glob(path+'*noise-info_'+band+'.pkl')[0]
 
-        # Get information from noise info file
-        if os.path.exists(noise_info_file):
-            noise_info = pickle.load(open(noise_info_file, 'rb'),encoding='latin1')
-            idx = None
-            for i in range(len(noise_info)):
-                if noise_info['name'][i] == gal_name:
-                    idx = i
-            gain = noise_info['gain_'+band][idx]
-            sky = noise_info['sky_'+band][idx]
+            # Get information from noise info file
+            if os.path.exists(noise_info_file):
+                noise_info = pickle.load(open(noise_info_file, 'rb'),encoding='latin1')
+                idx = None
+                for i in range(len(noise_info)):
+                    if noise_info['name'][i] == gal_name:
+                        idx = i
+                gain = noise_info['gain_'+band][idx]
+                sky = noise_info['sky_'+band][idx]
+        except:
+            gain = None
+            sky = None
     else:
         gain = None
         sky = None
@@ -309,7 +322,7 @@ def fits_read(name):
     else:
         psf_file = None
 
-    return data_file, rms_file, seg_mask, bg_mask, psf_file, gain, sky
+    return data_file, rms_file, seg_mask, bg_mask, obj_mask, psf_file, gain, sky
 
 
 
@@ -353,7 +366,7 @@ class Image(object):
             self.segmask = segmask
             self.psfmap = psfmap
         else:
-            data, noise, seg, bg, psf, gain, sky = fits_read(name)
+            data, noise, seg, bg, obj, psf, gain, sky = fits_read(name)
             name = name.split('/')[-1].split('.fits')[0]
             self.name = name
             self.datamap = data
@@ -361,6 +374,7 @@ class Image(object):
             self.maskmap = maskmap
             self.segmask = seg
             self.bgmask = bg
+            self.objmask = obj
             self.psfmap = psf
             #self.psfmap = None
             self.gain = gain
@@ -388,21 +402,25 @@ class Image(object):
             for better visualization (otherwise extraneous pixels have overpowering brightness).
         """
         if (type == 'data'):
-            plt.imshow(np.flipud(self.datamap)*np.flipud(self.segmask),cmap='gray',origin='lower')
+            plt.imshow(self.datamap*self.segmask,cmap='gray',origin='lower')
             plt.title(self.getLaTeXName())
         elif (type == 'mask'):
-            plt.imshow(np.flipud(self.maskmap),cmap='gray',origin='lower')
+            plt.imshow(self.maskmap,cmap='gray',origin='lower')
             plt.title(self.getLaTeXName()+' '+r'${\rm mask~map}$')
         elif (type == 'noise'):
             if self.noisemap is not None:
-                plt.imshow(np.flipud(self.noisemap),cmap='gray',origin='lower')
+                plt.imshow(self.noisemap,cmap='gray',origin='lower')
                 plt.title(self.getLaTeXName()+' '+r'${\rm noise~map}$')
         elif (type == 'psf'):
             if self.psfmap is not None:
-                plt.imshow(np.flipud(self.psfmap),cmap='gray',origin='lower')
+                plt.imshow(self.psfmap,cmap='gray',origin='lower')
                 plt.title(self.getLaTeXName()+' '+r'${\rm PSF~map}$')
+        elif (type == 'seg'):
+            if self.segmask is not None:
+                plt.imshow(self.segmask,cmap='gray',origin='lower')
+                plt.title(self.getLaTeXName()+' '+r'${\rm segmentation~mask~map}$')
         elif (type == 'noise_masked'):
-            plt.imshow(np.flipud(self.noisemap)*np.flipud(self.maskmap),cmap='gray',origin='lower')
+            plt.imshow(self.noisemap*self.maskmap,cmap='gray',origin='lower')
             plt.title(self.getLaTeXName()+' '+r'${\rm masked~noise~map}$')
         if save == True:
             plt.savefig(self.getName()+'_'+type+'.pdf', format='pdf')
@@ -653,7 +671,7 @@ class Image(object):
             if self.gain is None:
                 id_bg = np.where(self.bgmask==1)
                 noise1 = np.ma.std(self.datamap[id_bg])*np.ones(self.datamap.shape)
-                noise2 = np.sqrt(abs(self.datamap*self.segmask))
+                noise2 = 0 #noise2 = np.sqrt(abs(self.datamap*self.segmask))
                 self.noisemap = np.sqrt(noise1**2.+noise2**2.)
             else:
                 counts = self.datamap*self.segmask
@@ -666,8 +684,7 @@ class Image(object):
         # Calculate the elliptical mask
         # .. nsig is a heuristical number
         nsig = 2.5
-
-        id=np.where(abs(self.datamap*self.segmask) > abs(nsig*self.noisemap*self.segmask))
+        id=np.where(self.datamap*self.segmask > nsig*self.noisemap*self.segmask)
         for i in range(3):
             x, y, centroid, order2 = self.getMoments('x,y,centroid,order2', id)
             xc = centroid[0]
