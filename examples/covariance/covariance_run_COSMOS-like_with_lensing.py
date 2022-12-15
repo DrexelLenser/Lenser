@@ -102,11 +102,12 @@ Cov3 = Covariance(Nx=Nx, Ny=Ny,
                   xc=xc, yc=yc, ns=ns, rs=rs, q=q, phi=phi,
                   psi2=[psi11,psi12,psi22], 
                   psi3=[psi111,psi112,psi122,psi222],
-                  marg=np.array((1,1,1,1,0,0,0,0,0,1,1,1,1)),
+                  marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)),
                   I0=I0, noise1=noise1, noise2=noise2, background=background,
-                  N_iter=1000,
+                  N_iter=100,
                   fid_params=fid_params,
-                  stamp_col_label='COSMOS-like_with_lensing_ns_2.5_a_50')
+                  stamp_col_label='COSMOS-like_with_lensing')
+print(fid_params)
 # Simulate the stamp collection
 Cov3.simulateGals()
 # Run Lenser on this stamp collection

@@ -4,32 +4,47 @@
 |------------|-------------------------------------------------|
 | Author:    | Evan J. Arena                                   |
 
-![COSMOS_2572_r_localMin_zoom](https://user-images.githubusercontent.com/17692591/85325696-0af4cc80-b49a-11ea-9723-59c1f03c46e1.png)
+![COSMOS_5168_F814W_localMin_zoom](https://user-images.githubusercontent.com/17692591/207974019-0795a929-edc8-4553-b436-e9ac2cbdce84.png)
 
 `Lenser` is a fast, open-source, minimal-dependency Python tool for estimating weak gravitational lensing signals, particularly flexion, from real survey data or realistically simulated images. `Lenser` employs a hybrid of image moment analysis and an Analytic Image Modeling (AIM) analysis.
 
+In addition to extracting flexion measurements by fitting a (modified S\'{e}rsic) model to a single image of a galaxy, `Lenser` has the capability of doing multi-band, multi-epoch fitting. In multi-band mode, `Lenser` fits a single model to multiple postage stamps, each representing an exposure of a single galaxy in a particular band.  For example, one might do a simultaneous fit to the (r,i,z) bands in multi-fit mode, rather than just fitting the r band in single-fit mode.  In general, we find that multi-band fitting improves the overall fit for individual galaxies and yields successful fits for a larger percentage of a sample of galaxies compared to single-fit mode, as more information is obtained across multiple bands.
+
 * (c) Evan J. Arena (Drexel University Department of Physics), 2020.
 * For questions, please email `evan.james.arena@drexel.edu.`
-* If you wish to use `Lenser`, please cite our paper [arXiv:2006.03506](https://arxiv.org/abs/2006.03506).  If you wish to access the data from this paper, visit [DrexelLenser/arXiv-2006.03506](https://github.com/DrexelLenser/arXiv-2006.03506).
+* If you wish to use `Lenser`, please cite our paper [arXiv:2006.03506](https://arxiv.org/abs/2006.03506).
+* Public data releases associated with `Lenser` can be found here: [https://github.com/DrexelLenser/Public-Data-Releases](https://github.com/DrexelLenser/Public-Data-Releases)
+* Current version of Lenser: 2.0. Old versions of Lenser can be found here: [https://github.com/DrexelLenser/Old-versions-of-Lenser](https://github.com/DrexelLenser/Old-versions-of-Lenser)
 * Significant contributions to this work have been made by Joseph M. Fabritius II and David M. Goldberg of Drexel University.
-
 
 ## Required Packages
 * numpy
 * astropy
 * scipy
 * matplotlib
-* pickle
 * pandas
 * glob
-* numdifftools
 
 ## Modules
 
 * `lenser_galaxy.py`: Holds a real galaxy image, or a model galaxy image and model parameters
-* `lenser_aim.py`: minimizes the parameter space of lenser_galaxy
+* `lenser_aim.py`: Minimizes the parameter space of lenser_galaxy
+* `lenser_fits.py`: Prepares galaxy fits files for use in Lenser
 
 ## Classes and major functions
+
+* `FITS` class:
+    * Takes as an input the path to a galaxy postage stamp (as well as galaxy name).  
+    * At the path location, FITS also searches for additional SExtractor outputs,
+       such as a noise or weight map and segmentation map.
+    * If no noise or weight map is provided, FITS will search for a pickle file at 
+       the location '../*noise-info.pkl' that contains information in order to 
+       calculate one. If this pickle file does not exist, then a noisemap is calculated 
+       based on simple assumptions in the lenser_galaxy module.
+    * FITS will take the SExtractor segmentation map and construct an ubersegmentation mask
+       (a Bitmask where any pixel that is closer to another object than the galaxy = 0)
+       [MNRAS 460, 2245 (2016)]
+    * FITS will also search for a psf file associated with a given galaxy
 
 * `Galaxy` class: 
     * Holds the list of parameters used in the modified S\'{e}rsic model.
@@ -37,46 +52,54 @@
       * `p = {xc,yc,ns,rs,q,phi,psi11,psi12,psi22,psi111,psi112,psi122,psi222}`
     * `Galaxy().generateImage()` function:
       *  Holds the modified S\'{e}rsic model
-      *  Points to the `Lens` class and performs the lensing coordinate deprojection
-      *  Points to the `Image` class to create a two-dimensional image of the model
+      *  Points to the `Lens()` class and performs the lensing coordinate deprojection
+      *  Points to the `Image()` class to create a two-dimensional image of the model
       *  Performs PSF convolution if a PSF is available
-
-* `fits_read` function:
-    * Reads in FITS file for galaxy postage stamp.   
-    * Additionally, looks for FITS files for a noisemap, segmentation map, 
-       and PSFmap for the corresponding galaxy.
-    * If a noisemap is not provided, `fits_read()` will search for a pickle file at 
-       the location `../*noise-info.pkl` that contains information in order to 
-       calculate one.
-    * If this pickle file does not not exist, then one is calculated based on simple 
-       assumptions in `Image()`
 
 * `Image class`:
     * Holds various two-dimensional arrays referred to as "maps"
       * datamap: 
-        *  Corresponds to the galaxy image.  
-        * Can either by a real galaxy image from a FITS file, read in from `fits_read()`, 
+        * Corresponds to the science image postage stamp of a galaxy.  
+    	* Can either by a real galaxy image from a FITS file, which can be handled with `lenser_fits.py`, 
              or it can be a model galaxy image, generated by `Galaxy().generateImage()`
       * noisemap: 
-        *  Noise in the galaxy image.  
-        *  Can either be a real noisemap from a FITS file, read in from `fits_read()`,
+        * rms noise in the galaxy image.  
+        * Can either be a real noisemap from a FITS file, which can be handled with `lenser_fits.py`,
              or, in the absense of a noisemap, `Image()` generates one.
+      * weightmap:
+        * Inverse variance (1/noisemap**2) weighting of image noise
+        * NOTE: One should only supply either a noisemap or a weightmap
       * psfmap: 
-        *  PSF read in from `fits_read()`
-        * If one is not provided, PSF convolution is ignored throughout `Lenser`.
+        * Point-spread function (PSF) associated with galaxy image.
+        * If one is not provided, PSF convolution is ignored throughout Lenser.
     * Holds various two-dimensional arrays referred to as "masks"
       * segmentation mask:
-        *  see desciption in `fits_read()`
+        * Obtained from the SExtractor segmentation map and `lenser_fits.py`
+        * Bitmask where all non-galaxy pixels = 0 (galaxy pixels and background pixels = 1)
+      * background mask:
+        * Obtained from the SExtractor segmentation map and `lenser_fits.py`
+        * Bitmask where only background pixels = 1
+      * object mask (optional):
+        * Obtained from the SExtractor segmentation map and `lenser_fits.py`
+        * Bitmask where only galaxy pixels = 1   
+      * ubersegmentation mask (optional):
+        * Obtained from `lenser_fits.py`
+        * Bitmask where any pixel that is closer to another object than the galaxy = 0
+      * weighted ubersegmentation mask (optional):
+        * weightmap multiplied by the ubersegmentation mask
       * elliptical mask:
-        *  Generated so as to include only relevant pixels in the input image, reducing error from sources
+        *Generated so as to include only relevant pixels in the input image, reducing error from sources
              near the edge of the postage stamp. During this process, we also estimate: (i). the background map 
-             and (ii). the noisemap, in the case that a noisemap is not already provided and read in through 
-             `fits_read()`. The background is then subtraced from the datamap. 
+             and (ii). the noisemap, in the case that a noisemap is not already provided. 
+             Option to subtract the background from the datamap.
 
+* `Multi-Image class`:
+    * Creates a list that holdes multiple `Image()` instantiations for a single galaxy.
+    * For use in multi-band and/or multi-epoch fitting.  
 
 * `Lens` class:
     * Handles the lensing coordinate deprojection
-    * Temporarily holds the (up to) seven lens parameters before they are passed into the `Galaxy` class.
+    * Temporarily holds the (up to) seven lens parameters before they are passed into the `Galaxy()` class.
 
 * `aimModel` class:
     * Estimates lensing signals from real survey data or realistically simulated images. 
@@ -103,9 +126,25 @@
 	
 ## Examples 
 
-There are a few examples for using `Lenser` provided in the `Lenser/examples/` directory.  There is also a `Lenser/Catalogues/` directory containing five images each from the EFIGI and COSMOS catalogues (for information about these catalogues, see [arXiv:2006.03506](https://arxiv.org/abs/2006.03506)), along with prep files (contains information about redshift, u-r, etc.), segmentation maps, PSF maps, and noisemaps (noisemaps are provided for COSMOS only, not EFIGI).
+There are a few examples for using `Lenser` provided in the `Lenser/examples/` directory.  There is also a `Lenser/Catalogues/` directory containing five galaxies each from the COSMOS and EFIGI catalogues (for information about these catalogues, see [arXiv:2006.03506](https://arxiv.org/abs/2006.03506)), along with prep files (contains information about redshift, u-r, etc.), segmentation maps, PSF maps, and noisemaps (noisemaps are provided for COSMOS only, not EFIGI).  For COSMOS, images are provided in three bands: the Hubble filters F814W, F606W, and F125W.  For EFIGI, only a single band is provided: the SDSS filter r.
 
-* `lenser_run_sim_gal.py`: Simulates a galaxy image and then runs it through `Lenser` 
+* `run_real_gal/lenser_run_real_gal_single_fit.py`: Imports a real galaxy image and then runs it through `Lenser` in single-fit mode 
+  * This script takes as an input the path to a galaxy image and reads in all relevant .FITS files.
+  * It generates an elliptical mask, finds and subtracts a background,
+    and performs a chisquared minimzation using the `aimModel().runLocalMin()` function, 
+    which models a galaxy by using the modified S\'{e}rsic-type intensity profile of 
+    [arXiv:2006.03506](https://arxiv.org/abs/2006.03506)
+  * Plots are created for the real galaxy image, the mask, the noisemap, and the PSF (if provided)
+  * A plot is created comparing the real galaxy image, the model, and the difference between
+   the two.
+   
+* `run_real_gal/lenser_run_real_gal_multi_fit.py`: Imports a real galaxy in multiple image bands and then runs it through `Lenser` in multi-fit mode
+  * This script takes as an input the path to a galaxy image, in multiple bands, and reads in all relevant .FITS files.
+  * In multi-band mode, `Lenser` fits a single model to multiple postage stamps, each representing an exposure of a single galaxy in a particular band.
+    For example, one might do a simultaneous fit to the (r,i,z) bands in multi-fit mode, rather than just fitting the r band in single-fit mode.
+  * NOTE: Of the two provided catalogues, only COSMOS has multiple bands and can be used for multi-band fitting.
+
+* `run_sim_gal/lenser_run_sim_gal_single_fit.py`: Simulates a galaxy image and then runs it through `Lenser` single-fit mode 
   * One can use `Lenser` in order to simulate a postage stamp of a galaxy. In this case, the galaxy 
    itself is modeled using the modified S\'{e}rsic-type intensity profile, some sky background `b` is 
    added to the image, and randomly generated noise is added, such that each pixel `i` in the stamp 
@@ -119,21 +158,36 @@ There are a few examples for using `Lenser` provided in the `Lenser/examples/` d
    to lens some galaxy
      `myGalaxy = Galaxy(xc=0,yc=0,ns=0.75,rs=2.,q=3.5,phi=1*np.pi/6,galaxyLens=myLens)`
   *  This script demonstrates how to simulate such a postage stamp, and then export the datamap and
-   noisemap as .FITS files to the working directory.
+     noisemap as .FITS files to the working directory.
   *  This script then reads in those .FITS files, generates a mask, finds and subtracts a background,
-   and performs a chisquared minimzation using the `aimModel().runLocalMin()` function.
+     and performs a chisquared minimzation using the `aimModel().runLocalMin()` function.
   *  Plots are created for the simulated galaxy image, the elliptical mask, and the noisemap.
   *  A plot is created comparing the simualted galaxy image, the model, and the difference between
-   the two.
+     the two.
 
-* `lenser_run_real_gal.py`: Imports a real galaxy image and then runs it through `Lenser` 
-  * This script will import an image of a galaxy from one of the catalogues in the catalougues folder.
-  * Plots are created for the real galaxy image, the elliptical mask, the noisemap, and the PSF (if provided)
-  *  A plot is created comparing the real galaxy image, the model, and the difference between
-   the two.
+* `run_sim_gal/lenser_run_sim_gal_multi_fit.py`: Simulates a galaxy image in multiple bands and then runs it through `Lenser` in multi-fit mode  
+  * Across different bands, a galaxy will vary (slightly) by morphology.  To simulate this, this script chooses
+    different values of `ns`, `rs`, and `I0` for each band, while keeping all other parameters fixed.  
+    It is shown that the constant lensing parameters are fit well at the cost of fitting `ns` and `rs` poorly.
 
+* `run_cat/lenser_run_cat_single_fit.py`: Runs an entire catalogue of galaxy images through `Lenser` in single-fit mode
+    and exports pickle file of bestfit parameters
+  * This script will import one of the Catalogues in the Catalougues folder and run all of the images through `Lenser`.
+  * A prep file for a catalogue is required for object identification.
+    * NOTE: The prep files given for COSMOS and EFIGI contain many more objects than are provided in the `Lenser/Catalogues/` folder.
+      As such, when looping through the galaxies, most entries will be skipped over. 
+  * Best-fit parameters are dynamically saved in dataframe form to a pickle file.
 
-* `lenser_sim_cat.py`: Simulates a catalogue of galaxy images
+* `run_cat/lenser_run_cat_multi_fit.py`: Runs an entire catalogue of galaxy images through `Lenser` in single-fit mode
+    and exports pickle file of bestfit parameters
+  * This script will import one of the Catalogues in the Catalougues folder and run all of the images through `Lenser`.
+  * A prep file for a catalogue is required for object identification.
+    * NOTE: The prep files given for COSMOS and EFIGI contain many more objects than are provided in the `Lenser/Catalogues/` folder.
+      As such, when looping through the galaxies, most entries will be skipped over. 
+  * Best-fit parameters are dynamically saved in dataframe form to a pickle file.
+  * NOTE: Of the two provided catalogues, only COSMOS has multiple bands and can be used for multi-band fitting.
+
+* `sim_cat/lenser_sim_cat.py`: Simulates a catalogue of galaxy images
   * Create a catalogue of simulated galaxy postage stamps using `Lenser`.
   * A number of desired galaxies `Ngal` is specified, galactic and lensing 
    parameters are randomly generated for each galaxy, an image is 
@@ -141,21 +195,19 @@ There are a few examples for using `Lenser` provided in the `Lenser/examples/` d
    exported to the path 
      `Lenser/examples/Catalogues/Simulated_(insert time)/`
 
-* `lenser_run_cat.py`: Runs an entire catalogue of galaxy images through `Lenser` and exports pickle file of bestfit parameters
-  * This script will import one of the Catalogues in the Catalougues folder and run all of the images through `Lenser`.
-  * A prep file for a catalogue is required for object identification.
-  * Best-fit parameters are dynamically saved in dataframe form to a pickle file.
-
-* `covariance.py`: Calculates a covariance matrix for the `Lenser` parameter space     
+* `covariance/covariance.py`: Calculates a covariance matrix for the `Lenser` parameter space
+  * This is a study of error on paremeter fits in `Lenser` that is distinct from computing error on the
+      parameter space from the chisquared best fit in `aimModel.localMin()`.
   * Since `Lenser` is a forward-modeling code, the user can specify a set of input parameters and 
    create an image of a lensed galaxy. It is, therefore, possible to use `Lenser` in order to 
    compute a covariance matrix for our parameter space by simulating an ensemble of postage 
    stamp images (a "stamp collection") with known input parameters and noise, and 
    then running each of the postage stamps through `Lenser` for fitting. To test the response of 
    `Lenser` to noise, each postage stamp has identical input parameters and noise maps, but 
-   additional, unique Gaussian noise injected into each.
+   additional, unique random realizations of Gaussian noise are injected into each.
   * This module first creates a stamp collection, computes the covariance matrix, and then creates
    a triangle plot of 1- and 2-sigma error ellipses, along with the fiducial parameters indicated
    by a white plus sign.
-  * Instances of this class are given in the scripts `covariance_run_COSMOS-like_no_lensing.py`, `covariance_run_EFIGI-like_no_lensing.py`, `covariance_run_COSMOS-like_with_lensing.py`, and `covariance_run_EFIGI-like_with_lensing.py`.
-
+  * Instances of this class are given in the scripts `covariance_run_COSMOS-like_no_lensing.py`,
+    `covariance_run_EFIGI-like_no_lensing.py`, `covariance_run_COSMOS-like_with_lensing.py`,
+    and `covariance_run_EFIGI-like_with_lensing.py`.

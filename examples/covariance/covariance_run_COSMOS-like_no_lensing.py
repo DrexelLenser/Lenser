@@ -20,6 +20,10 @@ background = 0.
 # Set lensing fields to zero
 psi2 = [0,0,0]
 psi3 = [0,0,0,0]
+psi111 = 0
+psi112 = 0
+psi122 = 0
+psi222 = 0
 # Shape parameters
 # .. Centroid (will be dithered within a pixel in Covariance)
 xc = 0
@@ -45,9 +49,9 @@ Cov1 = Covariance(Nx=Nx, Ny=Ny,
                   psi2=psi2, psi3=psi3,
                   marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)),
                   I0=I0, noise1=noise1, noise2=noise2, background=background,
-                  N_iter=1000,
+                  N_iter=100,
                   fid_params=fid_params,
-                  stamp_col_label='COSMOS-like_no_lensing_ns_2.5_a_50')
+                  stamp_col_label='COSMOS-like_no_lensing')
 # Simulate the stamp collection
 Cov1.simulateGals()
 # Run Lenser on this stamp collection
@@ -58,112 +62,3 @@ Cov1_mat = Cov1.computeCovMat()
 print(np.round(Cov1.error(Cov1_mat),7))
 # Plot
 Cov1.plot_error_matrix(Cov1_mat)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-# Create an instance of the Covariance class
-# We would like to keep all default values, expect we will
-#  add a flat noisemap with a value of I0/1e4
-Cov1=Covariance(noise1=0.1, marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)), catalogue_label='noise1_I0e-4')
-
-# Simulate the catalogue with this noise
-Cov1.simulateGals()
-
-# Run Lenser on this catalogue
-Cov1.lenserRun()
-
-# Compute the covariance matrix for this catalogue
-Cov1_mat = Cov1.computeCovMat()
-
-# Compute the 1-sigma uncertainty on each parameter
-print(np.round(Cov1.error(Cov1_mat),7))
-
-# Plot
-Cov1.plot_error_matrix(Cov1_mat)
-
-
-# Now let us repeat this process but for a flat 
-#  noisemap with double the previous noise, 
-#  i.e. a value of 2*I0/1e4
-Cov2=Covariance(noise1=0.2, marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)), catalogue_label='noise1_2I0e-4')
-
-# Simulate the catalogue with this noise
-Cov2.simulateGals()
-
-# Run Lenser on this catalogue
-Cov2.lenserRun()
-
-# Compute the covariance matrix for this catalogue
-Cov2_mat = Cov2.computeCovMat()
-
-# Compute the 1-sigma uncertainty on each parameter
-print(np.round(Cov2.error(Cov2_mat),7))
-
-# Plot
-Cov2.plot_error_matrix(Cov2_mat)
-
-
-
-# Let's plot both of these covariance matrices 
-#  together for combined visualization
-Cov1_vs_Cov2=Covariance(marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)))
-Cov1_vs_Cov2_mats=Cov1_vs_Cov2.covariance_array(Cov1_mat,Cov2_mat)
-Cov1_vs_Cov2.plot_error_matrix_combined(Cov1_vs_Cov2_mats, filename='about/simulated_stamp_collections_noise1_I0e-4_and_noise1_2I0e-4_combined', labels=[r'$I_0/10^4$',r'$2I_0/10^4$'])
-
-
-# Create an instance of the Covariance class
-# We would like to keep all default values, expect we will
-#  add a flat noisemap with a value of I0/1e4
-Cov3=Covariance(noise1=0.1, q=2.5, phi=2., psi3=[0.001,0.002,0.003,0.004],marg=[1,1,1,1,1,1,0,0,0,1,1,1,1],catalogue_label='noise1_I0e-4_phi_2_q_2.5_psi3_0.001_0.002_0.003_0.004')
-#Cov3=Covariance(noise1=0.1, q=2.5, phi=0, psi3=[0,0,0,0],catalogue_label='noise1_I0e-4_phi_0_q_1_psiijk_0')
-
-# Simulate the catalogue with this noise
-Cov3.simulateGals(overwrite=True)
-
-# Run Lenser on this catalogue
-Cov3.lenserRun(overwrite=True)
-
-# Compute the covariance matrix for this catalogue
-Cov3_mat = Cov3.computeCovMat()
-
-# Compute the 1-sigma uncertainty on each parameter
-print(np.round(Cov3.error(Cov3_mat),7))
-
-# Plot
-Cov3.plot_error_matrix(Cov3_mat)
-"""

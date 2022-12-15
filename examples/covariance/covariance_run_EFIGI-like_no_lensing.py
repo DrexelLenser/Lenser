@@ -21,6 +21,10 @@ background = 0.
 # Set lensing fields to zero
 psi2 = [0,0,0]
 psi3 = [0,0,0,0]
+psi111 = 0
+psi112 = 0
+psi122 = 0
+psi222 = 0
 # Shape parameters
 # .. Centroid (will be dithered within a pixel in Covariance)
 xc = 0
@@ -46,9 +50,9 @@ Cov2 = Covariance(Nx=Nx, Ny=Ny,
                   psi2=psi2, psi3=psi3,
                   marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)),
                   I0=I0, noise1=noise1, noise2=noise2, background=background,
-                  N_iter=1000,
+                  N_iter=100,
                   fid_params=fid_params,
-                  stamp_col_label='EFIGI-like_no_lensing_eps_0.5')
+                  stamp_col_label='EFIGI-like_no_lensing')
 # Simulate the stamp collection
 Cov2.simulateGals()
 # Run Lenser on this stamp collection

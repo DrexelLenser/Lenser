@@ -8,7 +8,7 @@ from scipy.special import gamma
 
 """
 Module: lenser_sim_cat
-.. synopsis: Simulates a catalogue of galaxy images
+.. synopsis: Simulates a catalogue of galaxy images (single-band, single-epoch)
 .. module author: Evan J. Arena <evan.james.arena@drexel.edu>
 
 .. Create a catalogue of simulated galaxy postage stamps using Lenser.
@@ -25,12 +25,12 @@ tm_str = str(tm[2])+'_'+str(tm[1])+'_'+str(tm[0])+'_'+str(tm[3])+':'+str(tm[4])+
 path_to_cat = '../Catalogues/'
 cat_name = 'Simulated_'+tm_str
 cat_folder = cat_name+'/'
-image_folder = 'ima/'
+image_folder = 'Images/'
 os.mkdir(path_to_cat+cat_folder)  
 os.mkdir(path_to_cat+cat_folder+image_folder)  
 
 # Number of galaxies in simulated catalogue
-Ngal = 1000
+Ngal = 100
 
 # Generate the seeds for np.random. 
 # .. We need seeds for the random generation of model parameter, except for the centroid,
@@ -41,11 +41,11 @@ seed_list = np.arange(0, Npars_seed+Ngal)
 # Choose which galaxy catalogue to mimic: COSMOS, EFIGI, or other.  If other is chosen,
 #  you will need to specify the following parameters yourself: 
 #  .. Postage stamp size
-#  .. Galaxy size in pixels
+ #  .. Galaxy size in pixels
 #  .. Range of galaxy brightness, 
 #  .. Stamp noise 
 #  .. Sky background
-catalogue_type = 'EFIGI'
+catalogue_type = 'COSMOS'
 # COSMOS type catalogue
 if catalogue_type == 'COSMOS':
     # Generate non-fit parameters.  

@@ -6,14 +6,11 @@ Module: lenser_galaxy
 
 
 
-import os
 import numpy as np
 from astropy.io import fits
 from astropy.convolution import convolve_fft
 from scipy import optimize
-import pickle
 import pandas as pd
-import glob as glob
 import matplotlib.pyplot as plt
 from matplotlib import rc
 rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
@@ -28,12 +25,12 @@ class Galaxy(object):
     .. .. p = {xc,yc,ns,rs,q,phi,psi11,psi12,psi22,psi111,psi112,psi122,psi222}
     .. Galaxy().generateImage() function:
     .. .. Holds the modified S\'ersic model
-    .. .. Points to the Lens class and performs the lensing coordinate deprojection
-    .. .. Points to the Image class to create a two-dimensional image of the model
+    .. .. Points to the Lens() class and performs the lensing coordinate deprojection
+    .. .. Points to the Image() class to create a two-dimensional image of the model
     .. .. Performs PSF convolution if a PSF is available
     """
 
-    def __init__(self, xc=0., yc=0., ns=0.5, rs=1., q=1., phi=0., galaxyLens=None):
+    def __init__(self, xc=0., yc=0., ns=0.5, rs=1., q=1., phi=0., galaxyLens=None, galaxyQuadrupole=None):
         self.name=''
         self.xc = xc
         self.yc = yc
@@ -42,6 +39,7 @@ class Galaxy(object):
         self.q = q
         self.phi = phi
         self.galaxyLens = galaxyLens
+        self.galaxyQuadrupole = galaxyQuadrupole
 
     def setPar(self, val, type):
         """ 
@@ -89,6 +87,15 @@ class Galaxy(object):
         """
         self.galaxyLens = newlens
 
+    def setQuadrupole(self, quadrupolenew):
+        """
+        Set the quadrupole moments Q_ij for an Image (or MultiImage, averaged over all
+        available epochs and bands) for ease of access, so they only need to be calculated
+        once rather than calling Image().getMoments() multiple times
+          quadrupolenew = (Q11, Q12, Q22)
+        """
+        self.GalaxyQuadrupole = quadrupolenew
+
     def generateImage(self, nx, ny, lens=False, I0=1., 
                         noise1=0, noise2=0, seed=None, 
                         background=0, psfmap=None):
@@ -133,7 +140,9 @@ class Galaxy(object):
 
         # If a PSF is present, convolve it with the galaxy model
         if psfmap is not None:
-            datamap = convolve_fft(datamap,psfmap)
+            datamap = convolve_fft(datamap, psfmap,
+                                   normalize_kernel = False, psf_pad = False,
+                                   nan_treatment = 'fill')#, fft_pad = False )
 
         # Multiply the datamap by I0
         datamap = I0*datamap
@@ -155,176 +164,43 @@ class Galaxy(object):
         myImage = Image(self.name,datamap,noisemap)
         return myImage
 
+    
 
-
-def fits_read(name):
+class Lens(object):
 
     """
-    fits_read function:
-    .. Reads in FITS file for galaxy postage stamp.   
-    .. Additionally, looks for FITS files for a noisemap, segmentation map, 
-       and PSFmap for the corresponding galaxy.
-    .. If a noisemap is not provided, fits_read will search for a pickle file at 
-       the location '../*noise-info.pkl' that contains information in order to 
-       calculate one.
-    .. If this pickle file does not exist, then one is calculated based on simple 
-       assumptions in Image()
+    Lens class:
+    .. Handles the lensing coordinate deprojection
+    .. Temporarily holds the (up to) seven lens parameters before they are passed into the Galaxy() class.
     """
 
-    #Read in galaxy postage stamp
-    data_file = fits.open(name)[0].data
+    def __init__(self, psi2=[0,0,0], psi3=[0,0,0,0]):
+        self.psi2 = psi2
+        self.psi3 = psi3
 
-    # Look for noisemap, segmentation map, and PSFmap.  Check to see if the galaxy 
-    # postage stamp name contains a specific visual band.
-    if '_u' in name.split('.fits')[0]:
-        band='u'
-    elif '_g' in name.split('.fits')[0]:
-        band='g'
-    elif '_r' in name.split('.fits')[0]:
-        band='r'
-    elif '_i' in name.split('.fits')[0]:
-        band='i'
-    elif '_z' in name.split('.fits')[0]:
-        band='z'
-    else:
-        band=None
-    if band != None:
-        rms = name.split('_r.fits')[0]+'_'+band+'_rms.fits'
-        seg = name.split('_r.fits')[0]+'_'+band+'_seg.fits'
-        psf = name.split('_r.fits')[0]+'_'+band+'_psf.fits'
-    else:
-        rms = name.split('.fits')[0]+'_rms.fits'
-        seg = name.split('.fits')[0]+'_seg.fits'
-        psf = name.split('.fits')[0]+'_psf.fits'
+    def deproject(self, thetax, thetay):
+        """
+        Lensing coordinate deprojection
+        .. Note: thetax, thetay can be numbers or numpy objects.
+        """
+        betax = thetax
+        betay = thetay
+        fact = [0.5,1,0.5]
+        for i in range(2):
+            betax = betax-self.psi2[i]*thetax**(1-i)*thetay**(i)
+            betay = betay-self.psi2[i+1]*thetax**(1-i)*thetay**(i)
+        for i in range(3):
+            betax = betax-fact[i]*self.psi3[i]*thetax**(2-i)*thetay**(i)
+            betay = betay-fact[i]*self.psi3[i+1]*thetax**(2-i)*thetay**(i)
+        return betax, betay
 
-    # Create a segmentation mask from the segmentation map
-    # .. The segmentation map is an array of integers, where a single integer is assigned for every
-    # .. pixel of the postage stamp. These maps are typically generated using Source Extractor, which seeks
-    # .. to identify the background (and assign it a value 0); the main galaxy object (value 1); and
-    # .. any other foreground objects that may be present in the postage stamp (value 2 for the first
-    # .. extraneous foreground object, 3 for the second, etc.), such as stars, bad pixels, etc. Lenser
-    # .. then creates a segmentation mask, wherein the background and galaxy get values of 1, and
-    # .. all other foreground objects get a value of 0 – i.e., they are masked out. 
+    def setPsi2(self, psi2new):
+        self.psi2 = psi2new
 
-    if os.path.exists(seg):
-        # Read in segmentation map
-        try:
-            seg_map = fits.open(seg)['SCI'].data
-        except:
-            seg_map = fits.open(seg)['PRIMARY'].data
+    def setPsi3(self, psi3new):
+        self.psi3 = psi3new
 
-
-        # Get the segmentation map values corresponding to each object
-        seg_ids = np.unique(seg_map)
-        # Get background ids
-        bg_val = 0
-        id_bg = np.where(seg_map == bg_val)
-        # Get indices for the center of the stamp
-        seg_xc = int(seg_map.shape[0]/2)
-        seg_yc = int(seg_map.shape[1]/2)
-        obj_val = seg_map[seg_xc][seg_yc]
-        id_obj = np.where(seg_map == obj_val)
-
-        # Object mask corresponds to the object pixels only
-        obj_mask = seg_map*0
-        obj_mask[id_obj] = 1
-
-        # Background mask corresponds to the background pixels only
-        bg_mask = seg_map*0
-        bg_mask[id_bg] = 1
-
-        # Define segmentation mask
-        seg_mask = seg_map*0
-        seg_mask[id_obj] = 1
-        seg_mask[id_bg] = 1
         
-        # If there are extraneous objects within the stamp, create an uberseg mask
-        if len(seg_ids) > 2:
-            # .. Initialize uberseg mask
-            ubserseg_mask = seg_map*0
-            # .. Get id for all extraneous object pixels
-            id_extr = np.where((seg_map != bg_val) & (seg_map != obj_val))
-            # .. Get x,y coordinates for all object pixels
-            x_obj, y_obj = id_obj[0][:], id_obj[1][:]
-            # .. Get x,y coordinates for all extraneous object pixels
-            x_extr, y_extr = id_extr[0][:], id_extr[1][:]
-
-            # .. Uberseg:
-            for i in range(seg_map.shape[0]):
-                for j in range(seg_map.shape[1]):
-                    # .. Get distance of pixel (i,j) from every pixel in the object
-                    d_obj = np.sqrt((x_obj-i)**2.+(y_obj-j)**2.)              
-                    # .. Get distance of pixel (i,j) from every pixel in every extraneous object
-                    d_extr = np.sqrt((x_extr-i)**2.+(y_extr-j)**2.)    
-                    # .. Get minimum distance in each array
-                    d_obj_min = np.min(d_obj)
-                    d_extr_min = np.min(d_extr)
-                    # .. If pixel is closer to main object than extranous object, include in uberseg
-                    if d_obj_min <= d_extr_min: 
-                        ubserseg_mask[i][j] = 1
-                    else:
-                        ubserseg_mask[i][j] = 0
-        else:
-            ubserseg_mask = 1
-
-        # Full segmentation mask
-        seg_mask*=ubserseg_mask
-            
-    else:
-        # If a segmentation map is absent, the assumption is that the input postage stamp includes only 
-        # the background and galaxy, and hence all pixels are viable.
-        seg_mask = np.ones(data_file.shape)
-        obj_mask = None
-        bg_mask = None
-
-    # Noisemap
-    if os.path.exists(rms):
-        rms_file = fits.open(rms)[0].data
-    else:
-        rms_file = None
- 
-    # Now search for a .pkl file containing noise info.
-    # The .pkl filename must be located in the same directory of
-    # the input image, e.g. '*noise-info_r.pkl'
-    # where the 'r' extension is an e.g. where this information is
-    # specifically for the r band.  The .pkl file must contain 
-    # a pandas dataframe and have (at least) the following columns
-    # (we will again consider the e.g. of the 'r' band:)
-    #  name    gain_r    sky_r    skyErr_r    darkVariance_r
-    if rms_file is None:
-        try:
-            gal_name_w_band = name.split('/')[-1].split('.fits')[0]
-            path = name.split(gal_name_w_band)[0]
-            gal_name = gal_name_w_band.split('_r')[0]
-
-            # Get noise info file
-            noise_info_file = glob.glob(path+'*noise-info_'+band+'.pkl')[0]
-
-            # Get information from noise info file
-            if os.path.exists(noise_info_file):
-                noise_info = pickle.load(open(noise_info_file, 'rb'),encoding='latin1')
-                idx = None
-                for i in range(len(noise_info)):
-                    if noise_info['name'][i] == gal_name:
-                        idx = i
-                gain = noise_info['gain_'+band][idx]
-                sky = noise_info['sky_'+band][idx]
-        except:
-            gain = None
-            sky = None
-    else:
-        gain = None
-        sky = None
-        
-    # PSFmap
-    if os.path.exists(psf):
-        psf_file = fits.open(psf)[0].data
-    else:
-        psf_file = None
-
-    return data_file, rms_file, seg_mask, bg_mask, obj_mask, psf_file, gain, sky
-
-
 
 class Image(object):
 
@@ -332,56 +208,72 @@ class Image(object):
     Image class:
     .. Holds various two-dimensional arrays referred to as "maps"
     .. .. datamap: 
-    .. .. .. Corresponds to the galaxy image.  
-    .. .. .. Can either by a real galaxy image from a FITS file, read in from fits_read(), 
+    .. .. .. Corresponds to the science image postage stamp of a galaxy.  
+    .. .. .. Can either by a real galaxy image from a FITS file, which can be handled with lenser_fits.py, 
              or it can be a model galaxy image, generated by Galaxy().generateImage()
     .. .. noisemap: 
-    .. .. .. Noise in the galaxy image.  
-    .. .. .. Can either be a real noisemap from a FITS file, read in from fits_read(),
+    .. .. .. rms noise in the galaxy image.  
+    .. .. .. Can either be a real noisemap from a FITS file, which can be handled with lenser_fits.py,
              or, in the absense of a noisemap, Image() generates one.
+    .. .. weightmap:
+    .. .. .. Inverse variance (1/noisemap**2) weighting of image noise
+    .. .. .. NOTE: One should only supply either a noisemap or a weightmap
     .. .. psfmap: 
-    .. .. .. PSF read in from fits_read()
+    .. .. .. Point-spread function (PSF) associated with galaxy image.
     .. .. .. If one is not provided, PSF convolution is ignored throughout Lenser.
     .. Holds various two-dimensional arrays referred to as "masks"
     .. .. segmentation mask:
-    .. .. .. see desciption in fits_read()
+    .. .. .. Obtained from the SExtractor segmentation map and lenser_fits.py
+    .. .. .. Bitmask where all non-galaxy pixels = 0 (galaxy pixels and background pixels = 1)
+    .. .. background mask:
+    .. .. .. Obtained from the SExtractor segmentation map and lenser_fits.py
+    .. .. .. Bitmask where only background pixels = 1
+    .. .. object mask (optional):
+    .. .. .. Obtained from the SExtractor segmentation map and lenser_fits.py
+    .. .. .. Bitmask where only galaxy pixels = 1   
+    .. .. ubersegmentation mask (optional):
+    .. .. .. Obtained from lenser_fits.py
+    .. .. .. Bitmask where any pixel that is closer to another object than the galaxy = 0
+    .. .. weighted ubersegmentation mask (optional):
+    .. .. .. weightmap multiplied by the ubersegmentation mask
     .. .. elliptical mask:
     .. .. .. Generated so as to include only relevant pixels in the input image, reducing error from sources
              near the edge of the postage stamp. During this process, we also estimate: (i). the background map 
-             and (ii). the noisemap, in the case that a noisemap is not already provided and read in through 
-             fits_read(). The background is then subtraced from the datamap. 
+             and (ii). the noisemap, in the case that a noisemap is not already provided. 
+             Option to subtract the background from the datamap. 
     """
 
-    def __init__(self, name, datamap=None, noisemap=None, maskmap=None, segmask=None, psfmap=None):
-        """
-        If a datamap is provided, you are dealing with a galaxy model.
-        If a datamap is not provided, then you are dealing with a real galaxy image, 
-        and it is imported from fits_read()
-        """
-        if datamap is not None:
-            self.name = name
-            self.datamap = datamap
-            self.noisemap = noisemap
-            self.maskmap = maskmap
-            self.segmask = segmask
-            self.psfmap = psfmap
-        else:
-            data, noise, seg, bg, obj, psf, gain, sky = fits_read(name)
-            name = name.split('/')[-1].split('.fits')[0]
-            self.name = name
-            self.datamap = data
-            self.noisemap = noise
-            self.maskmap = maskmap
-            self.segmask = seg
-            self.bgmask = bg
-            self.objmask = obj
-            self.psfmap = psf
-            #self.psfmap = None
-            self.gain = gain
-            self.sky = sky
+    def __init__(self, name=None, datamap=None,
+                 noisemap=None, wtmap=None,
+                 ellipmask=None, segmask=None,
+                 ubersegmask=None, wtubersegmask=None,
+                 bgmask=None, objmask=None,
+                 psfmap=None,
+                 gain=None, sky=None):
+
+        self.name = name
+        self.datamap = datamap
+        self.noisemap = noisemap
+        self.wtmap = wtmap
+        self.ellipmask = ellipmask
+        self.segmask = segmask
+        self.ubersegmask = ubersegmask
+        self.wtubersegmask = wtubersegmask
+        self.bgmask = bgmask
+        self.objmask = objmask
+        self.psfmap = psfmap
+
+        # Optional, in case where noisemaps or weightmaps are not provided:
+        self.gain = gain                       # Gain in galaxy image
+        self.sky = sky                         # Sky-level in galaxy image
+
+        # Weighted mask, calculated for convinence for use in lenser_aim.py
+        self.wtMask = None
+        
         # Dimensions of datamap
-        self.nx = self.datamap.shape[0]
-        self.ny = self.datamap.shape[1]
+        if datamap is not None:
+            self.nx = self.datamap.shape[0]
+            self.ny = self.datamap.shape[1]
 
     def getName(self):
         """
@@ -391,41 +283,9 @@ class Image(object):
 
     def getLaTeXName(self):
         """
-        Get galaxy name in LaTeX formatting
+         Get galaxy name in LaTeX formatting
         """
         return r'${\rm '+self.name.replace('_',r'~')+'}$'
-
-    def plot(self, type='data', show=False, save=True):
-        """
-         Plot individual maps. 
-         .. We multiply the datamap by the segmask for plotting purposes only, 
-            for better visualization (otherwise extraneous pixels have overpowering brightness).
-        """
-        if (type == 'data'):
-            plt.imshow(self.datamap*self.segmask,cmap='gray',origin='lower')
-            plt.title(self.getLaTeXName())
-        elif (type == 'mask'):
-            plt.imshow(self.maskmap,cmap='gray',origin='lower')
-            plt.title(self.getLaTeXName()+' '+r'${\rm mask~map}$')
-        elif (type == 'noise'):
-            if self.noisemap is not None:
-                plt.imshow(self.noisemap,cmap='gray',origin='lower')
-                plt.title(self.getLaTeXName()+' '+r'${\rm noise~map}$')
-        elif (type == 'psf'):
-            if self.psfmap is not None:
-                plt.imshow(self.psfmap,cmap='gray',origin='lower')
-                plt.title(self.getLaTeXName()+' '+r'${\rm PSF~map}$')
-        elif (type == 'seg'):
-            if self.segmask is not None:
-                plt.imshow(self.segmask,cmap='gray',origin='lower')
-                plt.title(self.getLaTeXName()+' '+r'${\rm segmentation~mask~map}$')
-        elif (type == 'noise_masked'):
-            plt.imshow(self.noisemap*self.maskmap,cmap='gray',origin='lower')
-            plt.title(self.getLaTeXName()+' '+r'${\rm masked~noise~map}$')
-        if save == True:
-            plt.savefig(self.getName()+'_'+type+'.pdf', format='pdf')
-        if show == True:
-            plt.show()
 
     def getMap(self, type='data'):
         """
@@ -433,36 +293,80 @@ class Image(object):
         """
         if type == 'data':
             return self.datamap
-        elif type == 'mask':
-            return self.maskmap
         elif type == 'noise':
             return self.noisemap
+        elif type == 'wt':
+            if self.wtmap is not None:
+                return self.wtmap
+            elif self.noisemap is not None:
+                return 1/(self.noisemap)**2.
+        elif type == 'ellipmask':
+            return self.ellipmask
         elif type == 'segmask':
             return self.segmask
-        elif type == 'bgmask':
-            return self.bgmask
+        elif type == 'uberseg':
+            return self.ubersegmask
+        elif type == 'totalmask':
+            if self.ellipmask is not None:
+                if self.ubersegmask is not None:
+                    return self.ellipmask*self.ubersegmask
+                elif self.segmask is not None:
+                    return self.ellipmask*self.segmask
+            else:
+                if self.ubersegmask is not None:
+                    return self.ubersegmask
+                elif self.segmask is not None:
+                    return self.segmask 
+        elif type == 'wt_totalmask':
+            if self.wtmap is not None:
+                wt = self.wtmap
+            elif self.noisemap is not None:
+                wt = 1/(self.noisemap)**2.
+            if self.ellipmask is not None:
+                if self.ubersegmask is not None:
+                    return wt*self.ellipmask*self.ubersegmask
+                elif self.segmask is not None:
+                    return wt*self.ellipmask*self.segmask
+            else:
+                if self.ubersegmask is not None:
+                    return wt*self.ubersegmask
+                elif self.segmask is not None:
+                    return wt*self.segmask
+                else:
+                    return wt
         elif type == 'psf':
             return self.psfmap
-        elif type == 'noise_masked':
-            return self.noisemap*self.maskmap
-
-    def setMap(self, newdata, type='data'):
-        """ 
-        Set a new map
-        .. This function will not check for correct map shape
-        """
-        if type == 'data':
-            self.datamap=newdata
-        elif type == 'mask':
-            self.maskmap=newdata
-        elif type == 'noise':
-            self.noisemap=newdata
-        elif type == 'segmask':
-            self.segmask=newdata
         elif type == 'bgmask':
-            self.bgmask=newdata
-        elif type == 'psf':
-            self.psfmap=newdata
+            return self.bgmask
+
+    def plot(self, type='data', show=False, save=True):
+        """
+         Plot individual maps. 
+         .. We multiply the datamap by available masks for better visualization 
+            (otherwise extraneous pixels have overpowering brightness).
+        """
+        if (type == 'data'):
+            plt.imshow(self.datamap*self.getMap(type='totalmask'),cmap='gray',origin='lower')
+            plt.title(self.getLaTeXName())
+        elif (type == 'noise'):
+            if self.noisemap is not None:
+                plt.imshow(self.noisemap,cmap='gray',origin='lower')
+                plt.title(self.getLaTeXName()+' '+r'${\rm noise~map}$')
+        elif (type == 'wt'):
+            if self.wtmap is not None:
+                plt.imshow(self.wtmap,cmap='gray',origin='lower')
+                plt.title(self.getLaTeXName()+' '+r'${\rm weight~map}$')
+        elif (type == 'totalmask'):
+            plt.imshow(self.getMap(type='totalmask'),cmap='gray',origin='lower')
+            plt.title(self.getLaTeXName()+' '+r'${\rm mask~map}$')
+        elif (type == 'psf'):
+            if self.psfmap is not None:
+                plt.imshow(self.psfmap,cmap='gray',origin='lower')
+                plt.title(self.getLaTeXName()+' '+r'${\rm PSF~map}$')
+        if save == True:
+            plt.savefig(self.getName()+'_'+type+'.pdf', format='pdf')
+        if show == True:
+            plt.show()
 
     def getMoments(self, Qijkl, id=None):
         """
@@ -486,19 +390,19 @@ class Image(object):
         order4 = np.zeros(5)
 
         if id == None:
-            f0 = np.sum(self.datamap*self.maskmap*self.segmask)
-            centroid[0] = np.sum(self.datamap*x*self.maskmap*self.segmask)/f0 
-            centroid[1] = np.sum(self.datamap*y*self.maskmap*self.segmask)/f0 
+            f0 = np.sum(self.datamap*self.getMap('totalmask'))
+            centroid[0] = np.sum(self.datamap*x*self.getMap('totalmask'))/f0 
+            centroid[1] = np.sum(self.datamap*y*self.getMap('totalmask'))/f0 
             dx = x-centroid[0]
             dy = y-centroid[1]
             for idx in range(2):
-                order1[idx] = np.sum(self.datamap*pow(dx,1-idx)*pow(dy,idx)*self.maskmap*self.segmask)/f0
+                order1[idx] = np.sum(self.datamap*pow(dx,1-idx)*pow(dy,idx)*self.getMap('totalmask'))/f0
             for idx in range(3):
-                order2[idx] = np.sum(self.datamap*pow(dx,2-idx)*pow(dy,idx)*self.maskmap*self.segmask)/f0
+                order2[idx] = np.sum(self.datamap*pow(dx,2-idx)*pow(dy,idx)*self.getMap('totalmask'))/f0
             for idx in range(4):
-                order3[idx] = np.sum(self.datamap*pow(dx,3-idx)*pow(dy,idx)*self.maskmap*self.segmask)/f0
+                order3[idx] = np.sum(self.datamap*pow(dx,3-idx)*pow(dy,idx)*self.getMap('totalmask'))/f0
             for idx in range(5):
-                order4[idx] = np.sum(self.datamap*pow(dx,4-idx)*pow(dy,idx)*self.maskmap*self.segmask)/f0
+                order4[idx] = np.sum(self.datamap*pow(dx,4-idx)*pow(dy,idx)*self.getMap('totalmask'))/f0
         elif id != None:
             f0 = np.sum(self.datamap[id])
             centroid[0] = np.sum(self.datamap[id]*x[id])/f0 
@@ -516,61 +420,60 @@ class Image(object):
         
         if Qijkl == 'f0':
             return f0
-        if Qijkl == 'x':
+        elif Qijkl == 'x':
             return x
-        if Qijkl == 'y':
+        elif Qijkl == 'y':
             return y
-        if Qijkl == 'xc':
+        elif Qijkl == 'xc':
             return centroid[0]
-        if Qijkl == 'yc':
+        elif Qijkl == 'yc':
             return centroid[1]
-        if Qijkl == 'Q1':
+        elif Qijkl == 'Q1':
             return order1[0]
-        if Qijkl == 'Q2':
+        elif Qijkl == 'Q2':
             return order1[1]
-        if Qijkl == 'Q11':
+        elif Qijkl == 'Q11':
             return order2[0]
-        if Qijkl == 'Q12':
+        elif Qijkl == 'Q12':
             return order2[1]
-        if Qijkl == 'Q22':
+        elif Qijkl == 'Q22':
             return order2[2]
-        if Qijkl == 'Q111':
+        elif Qijkl == 'Q111':
             return order3[0]
-        if Qijkl == 'Q112':
+        elif Qijkl == 'Q112':
             return order3[1]
-        if Qijkl == 'Q122':
+        elif Qijkl == 'Q122':
             return order3[2]
-        if Qijkl == 'Q222':
+        elif Qijkl == 'Q222':
             return order3[3]
-        if Qijkl == 'Q1111':
+        elif Qijkl == 'Q1111':
             return order4[0]
-        if Qijkl == 'Q1112':
+        elif Qijkl == 'Q1112':
             return order4[1]
-        if Qijkl == 'Q1122':
+        elif Qijkl == 'Q1122':
             return order4[2]
-        if Qijkl == 'Q1222':
+        elif Qijkl == 'Q1222':
             return order4[3]
-        if Qijkl == 'Q2222':
+        elif Qijkl == 'Q2222':
             return order4[4]
-        if Qijkl == 'all':
+        elif Qijkl == 'all':
             return f0, x, y, centroid, order1, order2, order3, order4
-        if Qijkl == 'x,y,centroid,order2':
+        elif Qijkl == 'x,y,centroid,order2':
             return x, y, centroid, order2
-        if Qijkl == 'centroid,order2':
+        elif Qijkl == 'centroid,order2':
             return centroid, order2
-        if Qijkl == 'order2':
+        elif Qijkl == 'order2':
             return order2
-        if Qijkl =='order2,order3,order4':
+        elif Qijkl =='order2,order3,order4':
             return order2, order3, order4
 
-
-    def generateMask(self, subtractBackground=True):
+    def generateEllipticalMask(self, subtractBackground=True):
         """
         Here we generate the elliptical mask.
         During this process, we also estimate:
-          (i). the background map
+          (i).  the background
           (ii). the noisemap, in the case that a noisemap is not already provided
-                to Lenser and read in through fits_read().
+                to Lenser and read in through lenser_fits.py.
         The background is then subtraced from the datamap.  The background is not
         itself a global variable.
         """
@@ -667,14 +570,14 @@ class Image(object):
         # Calculate noisemap (if one is not provided)
         # .. The assumption here is that the noise contributions are a flat sky noise and
         # .. a Poisson noise
-        if self.noisemap is None:
+        if self.noisemap is None and self.wtmap is None and self.wtubersegmask is None:
             if self.gain is None:
                 id_bg = np.where(self.bgmask==1)
                 noise1 = np.ma.std(self.datamap[id_bg])*np.ones(self.datamap.shape)
                 noise2 = 0 #noise2 = np.sqrt(abs(self.datamap*self.segmask))
                 self.noisemap = np.sqrt(noise1**2.+noise2**2.)
             else:
-                counts = self.datamap*self.segmask
+                counts = self.datamap*self.getMap('totalmask')
                 sky = self.sky*self.segmask
                 id_bg = np.where(self.bgmask==1)
                 noise1 = np.ma.std(self.datamap[id_bg])*np.ones(self.datamap.shape)
@@ -683,63 +586,137 @@ class Image(object):
                 
         # Calculate the elliptical mask
         # .. nsig is a heuristical number
-        nsig = 2.5
-        id=np.where(self.datamap*self.segmask > nsig*self.noisemap*self.segmask)
-        for i in range(3):
-            x, y, centroid, order2 = self.getMoments('x,y,centroid,order2', id)
-            xc = centroid[0]
-            yc = centroid[1]
-            Q11 = order2[0]
-            Q12 = order2[1]
-            Q22 = order2[2]
+        nsig_list = np.array((2.5,2.75,3,3.25,3.5,3.75,4.0))
+        for i in range(len(nsig_list)):
+            nsig = nsig_list[i]
+            
+            if self.wtmap is not None:
+                id=np.where(self.datamap*self.getMap('totalmask') > nsig*(1/(np.sqrt(abs(self.wtmap))))*self.getMap('totalmask'))
+            elif self.noisemap is not None:
+                id=np.where(self.datamap*self.getMap('totalmask') > nsig*self.noisemap*self.getMap('totalmask'))
+            
+            for i in range(3):
+                x, y, centroid, order2 = self.getMoments('x,y,centroid,order2', id)
+                xc = centroid[0]
+                yc = centroid[1]
+                Q11 = order2[0]
+                Q12 = order2[1]
+                Q22 = order2[2]
 
-            chi1 = (Q11-Q22)/(Q11+Q22)
-            chi2 = 2*Q12/(Q11+Q22)
-            chisq = chi1**2+chi2**2
-            phi = np.arctan2(chi2,chi1)/2.
+                chi1 = (Q11-Q22)/(Q11+Q22)
+                chi2 = 2*Q12/(Q11+Q22)
+                chisq = chi1**2+chi2**2
+                phi = np.arctan2(chi2,chi1)/2.
 
-            q = np.sqrt((1+np.sqrt(chisq))/(1-np.sqrt(chisq)))
-            x1 = (x-xc)*np.cos(phi)+(y-yc)*np.sin(phi)
-            y1 = (y-yc)*np.cos(phi)-(x-xc)*np.sin(phi)
+                q = np.sqrt((1+np.sqrt(chisq))/(1-np.sqrt(chisq)))
+                x1 = (x-xc)*np.cos(phi)+(y-yc)*np.sin(phi)
+                y1 = (y-yc)*np.cos(phi)-(x-xc)*np.sin(phi)
 
-            # Elliptical mask:
-            id=np.where((x1/np.sqrt(1+chisq))**2+(y1/np.sqrt(1-chisq))**2 < nsig**2*(Q11+Q22))
+                # Elliptical mask:
+                id=np.where((x1/np.sqrt(1+chisq))**2+(y1/np.sqrt(1-chisq))**2 < nsig**2*(Q11+Q22))
+                
+            if len(id[0]>10):
+                self.ellipmask = np.zeros(self.datamap.shape)
+                self.ellipmask[id] = 1
+                break
+            else:
+                continue
+        if len(id[0]>10):
+            self.ellipmask = np.zeros(self.datamap.shape)
+            self.ellipmask[id] = 1
+        else:
+            self.ellipmask = np.ones(self.datamap.shape)
 
-        self.maskmap = np.zeros(self.datamap.shape)
-        self.maskmap[id] = 1
 
-
-
-class Lens(object):
+            
+class MultiImage(object):
 
     """
-    Lens class:
-    .. Handles the lensing coordinate deprojection
-    .. Temporarily holds the (up to) seven lens parameters before they are passed into the Galaxy class.
+    Multi-Image class:
+    .. Creates a list that holdes multiple Image() instantiations for a single galaxy.
+    .. For use in multi-band and/or multi-epoch fitting.  
     """
 
-    def __init__(self, psi2=[0,0,0], psi3=[0,0,0,0]):
-        self.psi2 = psi2
-        self.psi3 = psi3
+    def __init__(self, namelist=None, datalist=None,
+                 noiselist=None, wtlist=None,
+                 ellipmasklist=None, seglist=None,
+                 uberseglist=None, wtuberseglist=None,
+                 bgmasklist=None, objmasklist=None,
+                 psflist=None,
+                 generateEllipticalMask_bool=True,
+                 subtractBackground_bool=True):
 
-    def deproject(self, thetax, thetay):
+        self.namelist = namelist
+        self.datalist = datalist
+
+        try:
+            Nonelist = [None for i in range(len(datalist))]
+        except:
+            Nonelist = None
+        
+        if noiselist == None:
+            noiselist = Nonelist
+        self.noiselist = noiselist
+        
+        if wtlist == None:
+            wtlist = Nonelist
+        self.wtlist = wtlist
+        
+        if ellipmasklist == None:
+            ellipmasklist = Nonelist
+        self.ellipmasklist = ellipmasklist
+        
+        if seglist == None:
+            seglist = Nonelist
+        self.seglist = seglist
+        
+        if uberseglist == None:
+            uberseglist = Nonelist
+        self.uberseglist = uberseglist
+        
+        if wtuberseglist == None:
+            wtuberseglist = Nonelist
+        self.wtuberseglist = wtuberseglist
+        
+        if bgmasklist == None:
+            bgmasklist = Nonelist
+        self.bgmasklist = bgmasklist
+        
+        if objmasklist == None:
+            objmasklist = Nonelist
+        self.objmasklist = objmasklist
+        
+        if psflist == None:
+            psflist = Nonelist
+        self.psflist = psflist
+
+        try:
+            self.generateEllipticalMask_bool = generateEllipticalMask_bool
+            self.subtractBackground_bool = subtractBackground_bool
+
+            # Get number of epochs (i.e. number of observations for a single galaxy, be them different
+            #   exposures in a single band, or across multiple bands)
+            self.N_epochs = len(datalist)
+
+            # Generate list of Image() instances
+            self.Imagelist = []
+            self.generateImagelist()
+        except:
+            self.Imagelist = Nonelist
+
+    def generateImagelist(self):
         """
-        Lensing coordinate deprojection
-        .. Note: thetax, thetay can be numbers or numpy objects.
+        Loop over all available epochs and create Image() instance for each one.
         """
-        betax = thetax
-        betay = thetay
-        fact = [0.5,1,0.5]
-        for i in range(2):
-            betax = betax-self.psi2[i]*thetax**(1-i)*thetay**(i)
-            betay = betay-self.psi2[i+1]*thetax**(1-i)*thetay**(i)
-        for i in range(3):
-            betax = betax-fact[i]*self.psi3[i]*thetax**(2-i)*thetay**(i)
-            betay = betay-fact[i]*self.psi3[i+1]*thetax**(2-i)*thetay**(i)
-        return betax, betay
-
-    def setPsi2(self, psi2new):
-        self.psi2 = psi2new
-
-    def setPsi3(self, psi3new):
-        self.psi3 = psi3new
+        for i in range(self.N_epochs):
+            im = Image(name = self.namelist[i], datamap=self.datalist[i],
+                       noisemap = self.noiselist[i], wtmap = self.wtlist[i],
+                       ellipmask = self.ellipmasklist[i], segmask = self.seglist[i],
+                       ubersegmask = self.uberseglist[i], wtubersegmask = self.wtuberseglist[i],
+                       bgmask = self.bgmasklist[i], objmask = self.objmasklist[i],
+                       psfmap = self.psflist[i])
+            if self.generateEllipticalMask_bool == True:
+                im.generateEllipticalMask(subtractBackground = self.subtractBackground_bool)
+            self.Imagelist.append(im)
+            
+            

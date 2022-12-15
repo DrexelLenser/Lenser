@@ -9,12 +9,10 @@ sys.path.append('../..')
 from lenser import *
 from astropy.io import fits
 import numpy as np
-import pickle
 import scipy
 import pandas as pd
 import glob
 import time
-from scipy.stats import skew, kurtosis
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -30,6 +28,8 @@ class Covariance(object):
 
     """
     Covariance class:
+    .. This is a study of error on paremeter fits in Lenser that is distinct from computing error on the
+       parameter space from the chisquared best fit in aimModel.localMin()
     .. Since Lenser is a forward-modeling code, the user can specify a set of input parameters and 
        create an image of a lensed galaxy. It is, therefore, possible to use Lenser in order to 
        compute a covariance matrix for our parameter space by simulating an ensemble of postage 
@@ -202,10 +202,10 @@ class Covariance(object):
             yc_list = []
             for i in range(self.N_iter):
                 np.random.seed(seeds[i])
-                xc = self.xc+np.random.random(1)/2.
+                xc = self.xc+np.random.random(1)
                 xc_list.append(xc)
                 np.random.seed(seeds[i]+1)
-                yc = self.yc+np.random.random(1)/2.
+                yc = self.yc+np.random.random(1)
                 yc_list.append(yc)
 
             # Create the n different galaxy instances
@@ -232,11 +232,11 @@ class Covariance(object):
             # .. Now, let's save the datamaps and noisemaps to FITS files
             for i in range(self.N_iter):
                 hdu_datamap=fits.PrimaryHDU(myImage_list[i].getMap(type='data'))
-                hdu_datamap.writeto(self.path_to_col+'stamps/'+'Simulated_Galaxy_'+str(i)+'.fits',clobber=True)
+                hdu_datamap.writeto(self.path_to_col+'stamps/'+'Simulated_Galaxy_'+str(i)+'.fits',overwrite=True)
 
             for i in range(self.N_iter):
                 hdu_datamap=fits.PrimaryHDU(myImage_list[i].getMap(type='noise'))
-                hdu_datamap.writeto(self.path_to_col+'stamps/'+'Simulated_Galaxy_'+str(i)+'_rms.fits',clobber=True)
+                hdu_datamap.writeto(self.path_to_col+'stamps/'+'Simulated_Galaxy_'+str(i)+'_rms.fits',overwrite=True)
 
 
     def lenserRun(self, overwrite=False):
@@ -254,15 +254,16 @@ class Covariance(object):
         # Parameters for pickle file 
         output_params = ['xc','yc','ns','rs','q','phi',                                       # Galaxy fit parameters
                          'psi11','psi12','psi22','psi111','psi112','psi122','psi222',         # Lensing fit parameters
-                         'I0',                                                                # I0
+                         'err_xc','err_yc','err_ns','err_rs','err_q','err_phi',               # Error on galaxy fit parameters
+                         'err_psi11','err_psi12','err_psi22',                                 # Error on lensing fit parameters
+                         'err_psi111','err_psi112','err_psi122','err_psi222',                 # --
                          'rchi2',                                                             # chisquared of fit
-                         'F1_fit', 'F2_fit',                                                  # Flexion from fit                                       
-                         'a',                                                                 # Image size
+                         'F1_fit', 'F2_fit',                                                  # Flexion from fi
+                         'G1_fit', 'G2_fit',                                                  # --
                          'F1_HOLICs', 'F2_HOLICs',                                            # Flexion from HOLICs
-                         'mask_flag',                                                         # Mask flag: =1 if mask extends outside stamp
-                         'checkFit_flag',                                                     # checkFit flag: =1 if multiple images appear within stamp
-                         'noisemap_masked_mean', 'noisemap_masked_stdv',                      # Noisemap statistics
-                         'noisemap_masked_skew','noisemap_masked_kurtosis']                   # --
+                         'G1_HOLICs', 'G2_HOLICs',                                            # --
+                         'I0', 'a',                                                           # Galaxy normalization and size
+                         'mask_flag']                                                         # Mask flag: =1 if mask extends outside stamp
         output_filename = 'parameter_bestfits'
         self.pickle_file = self.path_to_col+output_filename+'.pkl'
         arrs = {k:[] for k in range(len(output_params))} #dict of variable lists
@@ -279,17 +280,25 @@ class Covariance(object):
 
                 try:
 
-                    # Read in image from FITS file
-                    myImage=Image(gal_list[i])
-
+                    # .. Read in image from FITS file
+                    path_to_image = gal_list[i]
+                    f = FITS(path_to_image)
+                    dat = f.get_FITS('data')
+                    rms = f.get_FITS('noise')
+                    seg = f.get_FITS('segmask')
+                    bg = f.get_FITS('bgmask')
+                    
+                    # .. Get image
+                    myImage = Image(name = name, datamap = dat,
+                        noisemap = rms, segmask = seg, bgmask = bg)
                     # .. Generate mask
-                    myImage.generateMask(subtractBackground=True)
+                    myImage.generateEllipticalMask(subtractBackground=True)
         
                     # .. Mask flag: =1 if mask extends outside stamp
                     mask_flag_val = 0
-                    mask = myImage.maskmap
-                    for i in np.arange(mask.shape[0]):
-                        if (mask[0][i] != 0) or (mask[i][0] != 0) or (mask[i][-1] != 0) or (mask[-1][i] != 0):
+                    mask = myImage.getMap('totalmask')
+                    for m in np.arange(mask.shape[0]):
+                        if (mask[0][m] != 0) or (mask[m][0] != 0) or (mask[m][-1] != 0) or (mask[-1][m] != 0):
                             mask_flag_val = 1
                             break
                     
@@ -299,76 +308,66 @@ class Covariance(object):
                     # .. Run local minimization
                     myModel.runLocalMinRoutine()
 
-                    # .. Check fit
-                    checkFit_flag_val = 0
-                    checkFit_flag_val = myModel.checkFit()
-
                     # .. Get flexion from fit
                     F, G = myModel.psi3ToFlexion()
                     F1_fit = F[0]
                     F2_fit = F[1]
+                    G1_fit = G[0]
+                    G2_fit = G[1]
 
                     # .. Get size
                     a = myModel.size()
 
                     # .. Get flexion from HOLICs
-                    F_HOLICs, G_HOLICs, = myModel.flexionMoments()
+                    F_HOLICs, G_HOLICs = myModel.flexionMoments(myImage)
                     F1_HOLICs = F_HOLICs[0]
                     F2_HOLICs = F_HOLICs[1]
-
-                    # .. Get mean, stdv, skew, and kurtosis of masked noisemap
-                    myNoise_masked = myImage.getMap(type='noise_masked')
-                    noisemap_masked_mean = np.mean(myNoise_masked.flatten())
-                    noisemap_masked_stdv = np.std(myNoise_masked.flatten())
-                    noisemap_masked_skew = skew(myNoise_masked.flatten())
-                    noisemap_masked_kurtosis = kurtosis(myNoise_masked.flatten()) 
+                    G1_HOLICs = G_HOLICs[0]
+                    G2_HOLICs = G_HOLICs[1]
                     
                     # .. Get values to save
-                    fit_pars = myModel.parsWrapper()
-                    other_pars = np.array((myModel.I0,
-                                           myModel.chisq(),
+                    fit_pars = np.append(myModel.parsWrapper(), myModel.parsErrorWrapper())
+                    other_pars = np.array((myModel.chisquared,
                                            F1_fit, F2_fit,
-                                           a, 
+                                           G1_fit, G2_fit,
                                            F1_HOLICs, F2_HOLICs,
-                                           mask_flag_val,
-                                           checkFit_flag_val,
-                                           noisemap_masked_mean, noisemap_masked_stdv,
-                                           noisemap_masked_skew, noisemap_masked_kurtosis))
+                                           G1_HOLICs, G2_HOLICs,
+                                           myModel.I0, a,
+                                           mask_flag_val))
                     output_vals = np.append(fit_pars, other_pars)
+
 
                     # Reset the parameters to their default values
                     # This step is needed if you are looping over multiple images
                     myModel.empty()
 
-                    #build dictionary for quick, dynamic dataframe building per iteration
-                    for i,j in zip(col_list,range(len(col_list))):
-                        if i in output_params: #if output parameter, append value appropriately
-                            arrs[j].append(output_vals[j])
-
-                    #build the dataframe
-                    dat = {i:arrs[j] for i,j in zip(col_list,range(len(col_list)))}
-                    out_frame = pd.DataFrame(data=dat,columns=col_list)
-                    out_frame.index.name=name
-                    out_frame.to_pickle(self.pickle_file)
-
                 except:
-                    print('Error in fit, skipping')
+                    print('Error, skipping')
+                    output_vals = np.nan*np.ones(len(output_params))
 
-    #def paramMeans(self):
+                #build dictionary for quick, dynamic dataframe building per iteration
+                for k,l in zip(col_list,range(len(col_list))):
+                    if k in output_params: #if output parameter, append value appropriately
+                        arrs[l].append(output_vals[l])
+                #build the dataframe
+                dat = {k:arrs[l] for k,l in zip(col_list,range(len(col_list)))}
+                out_frame = pd.DataFrame(data=dat,columns=col_list)
+                out_frame.index.name=name
+                out_frame.to_pickle(self.pickle_file)
+
 
     def computeCovMat(self):
 
         # Import tables from pickle files
         pickle_parameters = glob.glob(self.pickle_file)[0]
-        params = pickle.load(open(pickle_parameters, 'rb'),encoding='latin1')
+        params = pd.read_pickle(pickle_parameters)#pickle.load(open(pickle_parameters, 'rb'),encoding='latin1')
 
         # Get chisqr and set id to where the fit is successful (no NaNs) and < 1.5
         chisq = params['rchi2'].to_numpy()
-        checkFit_flag = params['checkFit_flag'].to_numpy()
         mask_flag = params['mask_flag'].to_numpy()
         a = params['a'].to_numpy()
         F = np.sqrt(params['F1_fit'].to_numpy()**2. + params['F2_fit'].to_numpy()**2.)
-        id = np.where((~np.isnan(chisq)) & (chisq < 1.5) & (a > 4.5) & (a*F < 1) & (checkFit_flag ==0) & (mask_flag==0))
+        id = np.where((~np.isnan(chisq)) & (chisq < 1.5) & (a > 4.5) & (a*F < 1) & (mask_flag==0))
 
         # Get lists of individual parameters
         xc_list = params['xc'].to_numpy()[id]

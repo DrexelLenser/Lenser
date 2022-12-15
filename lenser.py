@@ -1,5 +1,6 @@
 from lenser_galaxy import *
-from lenser_aim import * 
+from lenser_aim import *
+from lenser_fits import *
 import sys
 import time
 

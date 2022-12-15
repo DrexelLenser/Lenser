@@ -1,6 +1,6 @@
 """
 Module: lenser_aim
-.. synopsis: minimizes the parameter space of lenser_galaxy
+.. synopsis: Minimizes the parameter space of lenser_galaxy
 .. module author: Evan J. Arena <evan.james.arena@drexel.edu>
 """
 
@@ -49,20 +49,26 @@ class aimModel(object):
        estimates provided by the measured light moments, the final stage of the lenser_aim pipeline 
        employs a two-step chisquared minimization: (i) first minimizing over the initially coupled 
        sub-space {ns, rs} (ii) a final full ten-parameter space local minimization
-
     """
 
-    def __init__(self, myImage=None, myGalaxy=Galaxy(), myLens=Lens()):
-        self.myImage = myImage
+    def __init__(self, myImage = None, myMultiImage = None, myGalaxy = Galaxy(), myLens = Lens(),
+                 doFlags = np.array([1,1,1,1,1,1,0,0,0,1,1,1,1])):
         self.myGalaxy = myGalaxy
         self.myLens = myLens
         self.myGalaxy.setLens(myLens)
         self.I0 = 1.
         if myImage is not None:
-            self.nx = self.myImage.getMap().shape[0]
-            self.ny = self.myImage.getMap().shape[1]
+            self.myImage = myImage
+            self.mode = 'single'
+        elif myMultiImage is not None:
+            self.myMultiImage = myMultiImage
+            self.mode = 'multi'
 
-    def setPsi2(self,psi2new):
+        # doFlags: Boolean describing which parameters should be fit
+        # .. default: do not fit shear
+        self.doFlags = doFlags
+            
+    def setPsi2(self, psi2new):
         """
         Set the values for the psi2 lensing array
         .. These include the covergence and shear terms
@@ -70,7 +76,7 @@ class aimModel(object):
         """
         self.myGalaxy.setPsi2(psi2new)
 
-    def setPsi3(self,psi3new):
+    def setPsi3(self, psi3new):
         """
         Set the values for the psi3 lensing array
         .. These include the flexion terms
@@ -108,6 +114,14 @@ class aimModel(object):
                            psi3[0],psi3[1],psi3[2],psi3[3]])
         return pars
 
+    def parsErrorWrapper(self):
+        """
+        Wrapper for the full parameter space of galaxy and lensing parameter errors.
+        .. Returns a numpy array.
+        """
+        err = self.parsErrors
+        return err
+
     def setPars(self, pars):
         """
         Set all of the galaxy and lensing parameters.
@@ -131,74 +145,71 @@ class aimModel(object):
         self.setPsi2(psi2)
         self.setPsi3(psi3)
         
-    def calculateI0(self, includeSeg=True):
+    def calculateI0(self, image):
         """
         Calculate the central brightness of the modified S\'ersic proilfe, I0.
         """
-        # Weighting is 1/noisemap**2.
-        w = 1./pow(self.myImage.getMap(type='noise'),2)
-        # Get the psfmap
-        psf = self.myImage.getMap('psf')
         # Get the psf-convolved model image
-        testImage = self.myGalaxy.generateImage(self.nx, self.ny, lens=True, psfmap=psf)
-        # Calculate I0.  If includeSeg=True, then mask the real galaxy image as to not include extraneous pixels
-        if includeSeg == False:
-            I0 = np.sum(testImage.getMap()*self.myImage.getMap()*self.myImage.getMap(type='mask')*w)/np.sum(testImage.getMap()**2*self.myImage.getMap(type='mask')*w) 
-        if includeSeg == True:
-            I0 = np.sum(testImage.getMap()*self.myImage.getMap()*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask')*w)/np.sum(testImage.getMap()**2*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask')*w)
+        testImage = self.myGalaxy.generateImage(image.nx, image.ny, lens=True, psfmap=image.getMap(type='psf'))         
+        I0 = np.sum(testImage.getMap(type='data')*image.getMap(type='data')*image.getMap(type='wt_totalmask'))\
+            /np.sum(testImage.getMap(type='data')**2*image.getMap(type='wt_totalmask'))
         return I0
 
+    def calculateI0Multi(self, multi_image):
+        """
+        Calculate the central brightness of the modified S\'ersic proilfe, I0, for each epoch in multi-fit.
+        """
+        I0_list = np.ones(multi_image.N_epochs)
+        for i in range(multi_image.N_epochs):
+            I0_list[i] = self.calculateI0(multi_image.Imagelist[i])
+        return I0_list
+                
     def setI0(self, I0):
         """
         Set the central brightness of the modified S\'ersic proilfe, I0.
         """
         self.I0 = I0   
 
-    def chisq(self, reduced=True, type='standard', calculateI0=True, includeSeg=True): 
+    def chisq(self, image, reduced=True): 
         """
         Compute the chisquared: 
-        .. chisqr = ((I_{model}(i, p) − I_{data}(i))^2)/n(i)^2
+        .. chisqr = ((I_{model}(i, p) − I_{data}(i))^2)*w(i)
         .. I_{data} = self.myImage.getMap() 
         .. I_{model} = testImage.getMap()
         """
-        # Calculate weight
-        w = 1./pow(self.myImage.getMap(type='noise'),2)
-        # Get PSF
-        psf = self.myImage.getMap('psf')
-        # Get model I0 
-        if calculateI0 == True:
-            I0 = self.calculateI0()
-        else:
-            I0 = self.I0
         # Get model image
-        testImage = self.myGalaxy.generateImage(self.nx, self.ny, lens=True, I0=I0, psfmap=psf)
-
-        # Calculate chisquared
-        if includeSeg == False:
-            if type == 'standard':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask'))**2*w)
-            elif type == 'Pearson':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask'))**2*w/testImage.getMap())
-            elif type == 'Neyman':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask'))**2*w/self.myImage.getMap())
-        if includeSeg == True:
-            if type == 'standard':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))**2*w)
-            elif type == 'Pearson':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))**2*w/testImage.getMap())
-            elif type == 'Neyman':
-                chi2 = np.sum(((testImage.getMap()-self.myImage.getMap())*self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))**2*w/self.myImage.getMap())
+        testImage = self.myGalaxy.generateImage(image.nx, image.ny, lens=True, I0=self.calculateI0(image),
+                                                psfmap=image.getMap(type='psf'))
+        # Calculate chisquared 
+        chi2 = np.sum((testImage.getMap(type='data')-image.getMap(type='data'))**2.*image.getMap(type='wt_totalmask'))             
         if reduced == True:
             # Calculate reduced chisquared
-            if includeSeg == False:
-                dof = np.sum(self.myImage.getMap(type='mask'))-len(self.parsWrapper())
-                chi2_reduced = chi2/dof
-            if includeSeg == True:
-                dof = np.sum(self.myImage.getMap(type='mask')*self.myImage.getMap(type='segmask'))-len(self.parsWrapper())
-                chi2_reduced = chi2/dof
+            dof = np.sum(image.getMap(type='totalmask'))-np.sum(self.doFlags)
+            chi2_reduced = chi2/dof
             return chi2_reduced
         elif reduced == False:
             return chi2
+
+    def chisqMulti(self, multi_image, reduced=True):
+        """
+        Compute the chisquared for multi-fit.  This is simply a sum over the chisquared
+        associated with fitting the model to each epoch.
+        """
+        chi2_tot = 0
+        N_pix_tot = 0
+        for i in range(len(multi_image.Imagelist)):
+            chi2 = self.chisq(multi_image.Imagelist[i], reduced=False)
+            if (np.isnan(chi2) == True):
+                chi2=1e30
+            chi2_tot += chi2
+            N_pix_tot += np.sum(multi_image.Imagelist[i].getMap(type='totalmask'))
+        if reduced == True:
+            # Calculate reduced chisquared
+            dof = N_pix_tot-np.sum(self.doFlags)
+            chi2_tot_reduced = chi2_tot/dof
+            return chi2_tot_reduced
+        elif reduced == False:
+            return chi2_tot
 
     def chisqWrapper(self, parsCurrent, parsFixed, doFlags):
         """
@@ -208,15 +219,20 @@ class aimModel(object):
         pars = np.asarray(parsFixed)
         pars[np.where(doFlags==1)] = np.asarray(parsCurrent)
         self.setPars(pars)
-        return self.chisq()
-
+        if self.mode == 'single':
+            #return self.chisq(self.myImage)
+            return self.chisq(self.myImage, reduced=False)
+        elif self.mode == 'multi':
+            return self.chisqMulti(self.myMultiImage)
+  
     def size(self):
         """
         Return the characteristic size for a galaxy
           a = sqrt(Q11+Q22)
         """
-        Q11 = self.myImage.getMoments('Q11')
-        Q22 = self.myImage.getMoments('Q22')
+        quadrupole = self.myGalaxy.GalaxyQuadrupole
+        Q11 = quadrupole[0]
+        Q22 = quadrupole[2]
         a = np.sqrt(abs(Q11+Q22))
         return a
 
@@ -225,20 +241,21 @@ class aimModel(object):
         Uses an analytic expression that relates ns and rs to Q11, Q22, and q.
         .. ns and rs are coupled, so this function takes ns as an input and returns rs.
         """
-        Q11 = self.myImage.getMoments('Q11')
-        Q22 = self.myImage.getMoments('Q22')
-        Q0 = np.sqrt(Q11+Q22)
+        quadrupole = self.myGalaxy.GalaxyQuadrupole
+        Q11 = quadrupole[0]
+        Q22 = quadrupole[2]
+        Q0 = np.sqrt(abs(Q11+Q22))
         q = self.myGalaxy.q
         Q = Q0/np.sqrt(((1+q**2.)/2))
         rs = Q*np.sqrt(gamma(2.*ns)/gamma(4.*ns))
         return rs
 
-    def flexionMoments(self, approximate=False):
+    def flexionMoments(self, image, approximate=False):
         """
         Compute the first and second flexion from the image moments.
         """
         # Get the multipole image moments
-        order2, order3, order4 = self.myImage.getMoments('order2,order3,order4')
+        order2, order3, order4 = image.getMoments('order2,order3,order4')
         quadrupole = order2
         octupole = order3
         hexadecapole = order4
@@ -449,32 +466,119 @@ class aimModel(object):
         calculation to be used as an initial guess for the galaxy model.
         .. Estimates for {xc,yc,q,phi,psi111,psi112,psi122,psi222} are obtained
         """
-        # Get image moments and centroid
-        # .. Redefine the coordinates so that centroid is at the center of the stamp
-        centroid, order2 = self.myImage.getMoments('centroid,order2')
-        xc = centroid[0]-self.nx/2 
-        yc = centroid[1]-self.ny/2
-        Q11 = order2[0]
-        Q12 = order2[1]
-        Q22 = order2[2]
+        if self.mode == 'single':
+            # Get image moments and centroid
+            # .. Redefine the coordinates so that centroid is at the center of the stamp
+            centroid, order2 = self.myImage.getMoments('centroid,order2')
+            xc = centroid[0]-self.myImage.nx/2 
+            yc = centroid[1]-self.myImage.ny/2
+            Q11 = order2[0]
+            Q12 = order2[1]
+            Q22 = order2[2]
+            
+            # Calculate complex ellipticity terms to get phi and q
+            chi1 = (Q11-Q22)/(Q11+Q22)
+            chi2 = 2*Q12/(Q11+Q22)
+            chisq = chi1**2+chi2**2
+            phi = np.arctan2(chi2,chi1)/2.
+            q = np.sqrt((1+np.sqrt(chisq))/(1-np.sqrt(chisq)))
+            
+            # Calculate HOLICs to get flexion terms
+            F, G = self.flexionMoments(self.myImage)
+            psi3 = self.flexionToPsi3(F, G)
+            
+        elif self.mode == 'multi':
+            N_epochs = self.myMultiImage.N_epochs
+            xc_list = np.empty(N_epochs)
+            yc_list = np.empty(N_epochs)
+            Q11_list = np.empty(N_epochs)
+            Q12_list = np.empty(N_epochs)
+            Q22_list = np.empty(N_epochs)
+            q_list = np.empty(N_epochs)
+            phi_list = np.empty(N_epochs)
+            F1_list = np.empty(N_epochs)
+            F2_list = np.empty(N_epochs)
+            G1_list = np.empty(N_epochs)
+            G2_list = np.empty(N_epochs)
 
-        # Calculate complex ellipticity terms to get phi and q
-        chi1 = (Q11-Q22)/(Q11+Q22)
-        chi2 = 2*Q12/(Q11+Q22)
-        chisq = chi1**2+chi2**2
-        phi = np.arctan2(chi2,chi1)/2.
-        q = np.sqrt((1+np.sqrt(chisq))/(1-np.sqrt(chisq)))
+            for i in range(N_epochs):
+                # Get image moments and centroid
+                # .. Redefine the coordinates so that centroid is at the center of the stamp
+                centroid, order2 = self.myMultiImage.Imagelist[i].getMoments('centroid,order2')
+                xc_list[i] = centroid[0]-self.myMultiImage.Imagelist[i].nx/2
+                yc_list[i] = centroid[1]-self.myMultiImage.Imagelist[i].ny/2
+                Q11 = order2[0]
+                Q12 = order2[1]
+                Q22 = order2[2]
+                Q11_list[i] = Q11
+                Q12_list[i] = Q12
+                Q22_list[i] = Q22
 
-        # Calculate HOLICs to get flexion terms
-        F, G = self.flexionMoments()
-        psi3 = self.flexionToPsi3(F, G)
+                # Calculate complex ellipticity terms to get phi and q
+                chi1 = (Q11-Q22)/(Q11+Q22)
+                chi2 = 2*Q12/(Q11+Q22)
+                chisq = chi1**2+chi2**2
+                phi_list[i] = np.arctan2(chi2,chi1)/2.
+                q_list[i] = np.sqrt((1+np.sqrt(chisq))/(1-np.sqrt(chisq)))
+                
+                # Calculate HOLICs to get flexion terms
+                F, G = self.flexionMoments(self.myMultiImage.Imagelist[i])
+                F1_list[i] = F[0]
+                F2_list[i] = F[1]
+                G1_list[i] = G[0]
+                G2_list[i] = G[1]
 
+            # Remove any epochs that return NaN
+            # .. easiest to just add arrays by column (each column is an epoch) add see if
+            #    any values add to nan
+            id = np.where(np.isnan(xc_list+yc_list+Q11_list+Q12_list+Q22_list+q_list+phi_list\
+                                   +F1_list+F2_list+G1_list+G2_list) == False)
+            xc_list = xc_list[id]
+            yc_list = yc_list[id]
+            Q11_list = Q11_list[id]
+            Q12_list = Q12_list[id]
+            Q22_list = Q22_list[id]
+            q_list = q_list[id]
+            phi_list = phi_list[id]
+            F1_list = F1_list[id]
+            F2_list = F2_list[id]
+            G1_list = G1_list[id]
+            G2_list = G2_list[id]
+
+            # Get average parameter values across all epochs and bands.
+            #  For now, simply take this to be the median
+            # .. May change to a weighted average based on each epoch's S/N in the future
+            xc = np.median(xc_list)
+            yc = np.median(yc_list)
+            Q11 = np.median(Q11_list)
+            Q12 = np.median(Q12_list)
+            Q22 = np.median(Q22_list)
+            q = np.median(q_list)
+            phi = np.median(phi_list)
+            F1 = np.median(F1_list)
+            F2 = np.median(F2_list)
+            G1 = np.median(G1_list)
+            G2 = np.median(G2_list)
+            F = np.array((F1,F2))
+            G = np.array((G1,G2))
+            psi3 = self.flexionToPsi3(F, G)
+            
         # Set parameters
+        # .. Set quadrupole moments for ease of access
+        self.myGalaxy.setQuadrupole(np.array((Q11,Q12,Q22)))
+        # .. Set shape parameters
         self.setGalaxyPar(xc,'xc')
         self.setGalaxyPar(yc,'yc')
         self.setGalaxyPar(q,'q')
         self.setGalaxyPar(phi,'phi')
+        # .. Set lensing parameters
         self.setPsi3(psi3)
+
+        # Calculate chisquared
+        if self.mode == 'single':
+            chi2 = self.chisq(self.myImage)
+        elif self.mode == 'multi':
+            chi2 = self.chisqMulti(self.myMultiImage)
 
         print('Parameter subspace initial guess from image moments:')
         print('...','[','xc =',xc,']')
@@ -485,9 +589,9 @@ class aimModel(object):
         print('...','[','psi,112 =',psi3[1],']')
         print('...','[','psi,122 =',psi3[2],']')
         print('...','[','psi,222 =',psi3[3],']')
-        print('...','[','Chisqr =', self.chisq(),']')
+        print('...','[','Chisqr =',chi2,']')
 
-    def localMin(self, doFlags=np.array([1,1,1,1,1,1,0,0,0,1,1,1,1]), bruteMin=False):
+    def localMin(self, bruteMin=False):
         """
         Performs a local minimzation over (subsets of) the parameter space
         .. doFlags represent which parameters should actually be included in a given minimzation run.
@@ -517,13 +621,15 @@ class aimModel(object):
         pars0 = copy.deepcopy(self.parsWrapper())
         
         if  bruteMin == True:
-            ns = np.linspace(0.1, 10., 100.)
+            ns = np.linspace(0.1, 10., 100)
             rs = np.zeros((100))
             chisqrd = np.zeros((len(ns)))
             ibest = -1
-            jbest = -1
             chimin = 1e9
-            I0_best = 1.
+            if self.mode == 'single':
+                I0_best = 1.
+            elif self.mode == 'multi':
+                I0_best_list = np.ones(self.myMultiImage.N_epochs)
 
             for i in range(len(ns)):
                 # Get parameter space
@@ -534,35 +640,87 @@ class aimModel(object):
                 parsCurrent[3] = rs[i]
                 # Chisquared minimization
                 self.setPars(parsCurrent)
-                chival = self.chisq()
-                if verbose:print('chival', chival)
-                if (chival < chimin):
-                    ibest = i
-                    chimin = chival
-                    I0_best = self.calculateI0()
-                    if verbose:print(chimin)
+                if self.mode == 'single':
+                    chival = self.chisq(self.myImage)
+                    if verbose:print('chival', chival)
+                    if (chival < chimin):
+                        ibest = i
+                        chimin = chival
+                        I0_best = self.calculateI0(self.myImage)
+                        if verbose:print(chimin)
+                elif self.mode == 'multi':
+                    chival = self.chisqMulti(self.myMultiImage)
+                    if verbose:print('chival', chival)
+                    if (chival < chimin):
+                    #if (chival < chimin) & (chival > 0):
+                        ibest = i
+                        chimin = chival
+                        I0_best = self.calculateI0Multi(self.myMultiImage)
+                        if verbose:print(chimin)                    
             self.setGalaxyPar(ns[ibest],'ns')
             self.setGalaxyPar(rs[ibest],'rs')
             self.setI0(I0_best)
+
+            # Calculate chisquared
+            if self.mode == 'single':
+                chi2 = self.chisq(self.myImage)
+            elif self.mode == 'multi':
+                chi2 = self.chisqMulti(self.myMultiImage)
+
             print('Brute force subspace minimization best-fit values:')
             print('...','[','ns =',ns[ibest],']')
             print('...','[','rs =',rs[ibest],']')
-            print('...','[','Chisqr =',self.chisq(),']')
+            print('...','[','Chisqr =',chi2,']')
 
         else:
             # Get (subset of) parameter space
-            parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(doFlags==1)]) 
+            parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(self.doFlags==1)]) 
             # Chisquared minimization
-            out = optimize.minimize(self.chisqWrapper, parsCurrent, method='L-BFGS-B', args=(pars0,doFlags),
+            out = optimize.minimize(self.chisqWrapper, parsCurrent, method='L-BFGS-B', args=(pars0,self.doFlags),
                                     bounds=((-1e3,1e3),(-1e3,1e3),(1e-1,5e1),(1e-10,1e2),(1,1e2),
                                             (None,None),(None,None),(None,None),(None,None),(None,None)),
                                     options={'disp':verbose,'maxiter':600})
             pars = np.asarray(pars0)
-            pars[np.where(doFlags==1)] = np.asarray(out.x)
+            pars[np.where(self.doFlags==1)] = np.asarray(out.x)
             self.setPars(pars)
-            I0 = self.calculateI0()
+
+            #print(out.success)
+            #print(out.message)
+            #print(out.nit)
+            #print(out.keys())
+            
+            # Get errors on parameters
+            ftol = 2.220446049250313e-09
+            tmp_i = np.zeros(len(out.x))
+            pars_err_tmp = np.zeros(len(out.x))
+            for i in range(len(out.x)):
+                tmp_i[i] = 1.0
+                hess_inv_i = out.hess_inv(tmp_i)[i]
+                #pars_err_tmp[i] = np.sqrt(max(1, abs(out.fun)) * ftol * hess_inv_i)
+                pars_err_tmp[i] = np.sqrt(abs(out.fun) * ftol * hess_inv_i)
+                tmp_i[i] = 0.0
+            pars_err = np.zeros(len(self.parsWrapper()))
+            pars_err[np.where(self.doFlags==1)] = pars_err_tmp
+            # .. Set errors
+            self.parsErrors = pars_err
+            
+            # Calculate I0
+            if self.mode == 'single':   
+                I0 = self.calculateI0(self.myImage)
+            elif self.mode == 'multi':
+                I0 = self.calculateI0Multi(self.myMultiImage)
+            # .. Set I0
             self.setI0(I0)
 
+            # Calculate chisquared
+            if self.mode == 'single':
+                chi2 = self.chisq(self.myImage)
+            elif self.mode == 'multi':
+                chi2 = self.chisqMulti(self.myMultiImage)
+            # .. Set chisquared
+            self.chisquared = chi2
+            
+            # Print bestfit parameters
             print('L-BFGS-B local minimzation best-fit values:')
             print('...','[','xc =',pars[0],']')
             print('...','[','yc =',pars[1],']')
@@ -577,10 +735,25 @@ class aimModel(object):
             print('...','[','psi,112 =',pars[10],']')
             print('...','[','psi,122 =',pars[11],']')
             print('...','[','psi,222 =',pars[12],']')
-            print('...','[','Chisqr =',self.chisq(),']')
-                
+            print('...','[','Chisqr =',chi2,']')
 
-    def globalMin(self,doFlags=np.array([1,1,1,1,1,1,0,0,0,1,1,1,1])):
+            # Print 1sigma errors
+            print('1sigma errors on parameters:')
+            print('...','[','error on xc =',pars_err[0],']')
+            print('...','[','error on yc =',pars_err[1],']')
+            print('...','[','error on ns =',pars_err[2],']')
+            print('...','[','error on rs =',pars_err[3],']')  
+            print('...','[','error on q =',pars_err[4],']')
+            print('...','[','error on phi =',pars_err[5],']') 
+            print('...','[','error on psi,11 =',pars_err[6],']')
+            print('...','[','error on psi,12 =',pars_err[7],']')
+            print('...','[','error on psi,22 =',pars_err[8],']')
+            print('...','[','error on psi,111 =',pars_err[9],']')
+            print('...','[','error on psi,112 =',pars_err[10],']')
+            print('...','[','error on psi,122 =',pars_err[11],']')
+            print('...','[','error on psi,222 =',pars_err[12],']')    
+
+    def globalMin(self):
         """
         We include the option for global minimization rather than a two-step local minimzation.
         This method is not necessarily recommended as superior, as the much larger computation time
@@ -590,14 +763,15 @@ class aimModel(object):
            of coordinates, performing local optimization, and accepting or rejecting new coordinates based 
            on a minimized function value.
         .. Included in the scipy optimization package.
+        .. NOTE: This works for single-fit mode only.
         """
         pars0 = copy.deepcopy(self.parsWrapper())
         # Get (subset of) parameter space
-        parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(doFlags==1)]) 
+        parsCurrent = copy.deepcopy(self.parsWrapper()[np.where(self.doFlags==1)]) 
         # Chisquared minimization
-        out = optimize.basinhopping(self.chisqWrapper, parsCurrent, minimizer_kwargs={'method':'L-BFGS-B','args':(pars0,doFlags)})
+        out = optimize.basinhopping(self.chisqWrapper, parsCurrent, minimizer_kwargs={'method':'L-BFGS-B','args':(pars0,self.doFlags)})
         pars = np.asarray(pars0)
-        pars[np.where(doFlags==1)] = np.asarray(out.x)
+        pars[np.where(self.doFlags==1)] = np.asarray(out.x)
         self.setPars(pars)
         I0 = self.calculateI0()
         self.setI0(I0)
@@ -617,68 +791,6 @@ class aimModel(object):
         print('...','[','psi,222 =',pars[12],']')
         print('...','[','Chisqr =',self.chisq(),']')
 
-    def getParErrors(self, doFlags=np.array([1,1,1,1,1,1,0,0,0,1,1,1,1])):
-        """
-        Returns the covariance matrix and 1sigma errors from the chisquared
-        best fit.
-        .. The covariance matrix has dimensions of len(doFlags)xlen(doFlags)
-           whereas the errors list spans the entire parameter space (zeros are
-           inserted where doFlags=0.
-        """
-        pars0 = copy.deepcopy(self.parsWrapper())
-        parsBest = copy.deepcopy(self.parsWrapper())[np.where(doFlags==1)]
-        chisqr_best = self.chisq()
-
-        def modelWrapper(p):
-            parsCurrent = pars0
-            parsCurrent[np.where(doFlags==1)] = np.asarray(p)
-            self.setPars(parsCurrent)
-            chisqr = self.chisq(reduced=False,calculateI0=False)
-            parsCurrent[np.where(doFlags==1)] = parsBest
-            self.setPars(parsCurrent)
-            return chisqr
-
-        # Suppress numdifftools warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            hessian_mat = nd.Hessian(modelWrapper)(parsBest)
-            # Avoid error where NaNs are returned:
-            #hessian_mat += np.diag((1e-30)*np.ones(len(parsBest)))
-            #hessian_mat += (1e-30)*np.ones((len(parsBest),len(parsBest)))
-            #print(hessian_mat)
-            id = np.where(np.isnan(hessian_mat))
-            hessian_mat[id] = 1.e30
-            cov_mat = np.linalg.inv(hessian_mat)
-            #print(cov_mat)
-            errs = []
-            for i in range(len(parsBest)):
-                err = np.sqrt(abs(cov_mat[i,i]))
-                #err = 1/np.sqrt(abs(hessian_mat[i,i]))
-                errs.append(err)
-
-        #Put zeros in for errors where doFlags=0
-        errors = np.zeros(len(pars0))
-        errors[np.where(doFlags==1)] = errs
-
-        # Print 1sigma errors
-        print('1sigma errors on parameters:')
-        print('...','[','error on xc =',errors[0],']')
-        print('...','[','error on yc =',errors[1],']')
-        print('...','[','error on ns =',errors[2],']')
-        print('...','[','error on rs =',errors[3],']')  
-        print('...','[','error on q =',errors[4],']')
-        print('...','[','error on phi =',errors[5],']') 
-        print('...','[','error on psi,11 =',errors[6],']')
-        print('...','[','error on psi,12 =',errors[7],']')
-        print('...','[','error on psi,22 =',errors[8],']')
-        print('...','[','error on psi,111 =',errors[9],']')
-        print('...','[','error on psi,112 =',errors[10],']')
-        print('...','[','error on psi,122 =',errors[11],']')
-        print('...','[','error on psi,222 =',errors[12],']')
-
-        # Return covariance matrix and 1sigma errors
-        return cov_mat, errors
-
     def runLocalMinRoutine(self):
         """
         First, call simpleStart() to estimate brightness moments from an unweighted quadrupole and hexadecapole 
@@ -690,16 +802,16 @@ class aimModel(object):
         self.simpleStart()
         self.localMin(bruteMin=True)
         self.localMin()
-
-    def checkFit(self):
+        
+    def checkFit(self, image):
         """
         Check for a realistic fit.     
         .. Mostly checking for bad flexion values that create secondary lens images within the postage stamp.
         .. This is done by checking to see if there are two 'centroid regions.'  If there are, an error is raised.
+        .. NOTE: this works for single-fit only
         """
-        myImage = self.myImage.getMap()*self.myImage.getMap(type='segmask')
-        psf = self.myImage.getMap('psf')
-        myModel = self.myGalaxy.generateImage(self.nx,self.ny,I0=self.I0,lens=True,psfmap=psf).getMap()
+        psf = image.getMap('psf')
+        myModel = self.myGalaxy.generateImage(image.nx,image.ny,I0=self.I0,lens=True,psfmap=psf).getMap()
 
         neighborhood_size = 5
         threshold = 0.005*self.I0
@@ -730,13 +842,14 @@ class aimModel(object):
         Create a three-panel plot of the original galaxy image, the model image, and the residual.
         .. We multiply the datamap by the segmask for plotting purposes only, 
            for better visualization (otherwise extraneous pixels have overpowering brightness).
+        .. NOTE: this works for single-fit only
         """
         # Get original galaxy image
-        myImage = self.myImage.getMap()*self.myImage.getMap(type='segmask')
+        myImage = self.myImage.getMap()*self.myImage.getMap(type='totalmask')
         # Get PSF
         psf = self.myImage.getMap('psf')
         # Generate model image and convolve with the PSF
-        myModel = self.myGalaxy.generateImage(self.nx, self.ny, lens=True, I0=self.I0, psfmap=psf).getMap()
+        myModel = self.myGalaxy.generateImage(self.myImage.nx, self.myImage.ny, lens=True, I0=self.I0, psfmap=psf).getMap()
         # Get residual
         difference = myImage-myModel
         # Make plot
@@ -771,14 +884,14 @@ class aimModel(object):
             if show == True:
                 plt.show()
         elif zoom == True:
-            A = np.sum(self.myImage.getMap(type='mask'))
+            A = np.sum(self.myImage.getMap(type='totalmask'))
             q = self.myGalaxy.q
             a = np.sqrt((A*q)/np.pi)
             buf = a
-            xleft = (self.nx/2+self.myGalaxy.xc)-buf
-            xright = (self.nx/2+self.myGalaxy.xc)+buf
-            ybottom = (self.ny/2+self.myGalaxy.yc)-buf
-            ytop = (self.ny/2+self.myGalaxy.yc)+buf
+            xleft = (self.myImage.nx/2+self.myGalaxy.xc)-buf
+            xright = (self.myImage.nx/2+self.myGalaxy.xc)+buf
+            ybottom = (self.myImage.ny/2+self.myGalaxy.yc)-buf
+            ytop = (self.myImage.ny/2+self.myGalaxy.yc)+buf
             ax[0].set_xlim(xleft,xright)
             ax[0].set_ylim(ybottom,ytop)
             ax[1].set_xlim(xleft,xright)
@@ -813,12 +926,16 @@ class aimModel(object):
                         psi3[0],psi3[1],psi3[2],psi3[3]])
         self.setPars(pars)
 
-        self.myImage.setMap(None)
-        self.myImage.setMap(None, type='mask')
-        self.myImage.setMap(None, type='noise')
-        self.myImage.setMap(None, type='psf')
-
         self.I0=1.
+        
+        if self.mode == 'single':
+            emptyImage = Image()
+            self.myImage = emptyImage
+        elif self.mode == 'multi':
+            emptyMulti = MultiImage()
+            self.myMultiImage = emptyMulti
+
+        
 
 
         

@@ -8,12 +8,12 @@ from scipy.special import gamma
 
 
 """
-Module: lenser_run_sim_gal
-.. synopsis: Simulates a galaxy image and then runs it through Lenser 
+Module: lenser_run_sim_gal_single_fit
+.. synopsis: Simulates a galaxy image and then runs it through Lenser in single-fit mode
 .. module author: Evan J. Arena <evan.james.arena@drexel.edu>
 
 .. One can use Lenser in order to simulate a postage stamp of a galaxy. In this case, the galaxy 
-   itself is modeled using the modified S\eersic-type intensity profile, some sky background b is 
+   itself is modeled using the modified S\'ersic-type intensity profile, some sky background b is 
    added to the image, and randomly generated noise is added, such that each pixel i in the stamp 
    has a value given by:
      f_i = I_i + n_i ∗ numpy.random.normal(size=(N1, N2)) + b_i
@@ -49,9 +49,9 @@ if catalogue_type == 'COSMOS':
     Nx = 150
     Ny = 150
     # .. Standard galaxy size (in pixels)
-    a = 30
+    a = 10.
     # .. I0
-    I0 = 5.
+    I0 = 1.
     # .. noise1 and noise2
     noise1 = 1.3e-3
     noise2 = 0.
@@ -126,7 +126,7 @@ psi222 = (1./2.)*(3.*F2 - G2)
 xc = 0.5
 yc = 0.5
 # .. ns
-ns = 2.5
+ns = 1.5
 # .. phi
 phi = np.pi/6
 # .. q
@@ -134,11 +134,17 @@ phi = np.pi/6
 # .. .. We choose intrinsic ellipticity to have a magnitude of 0.2 (Schneider 1996)
 eps_s = 0.2
 eps_s1, eps_s2 = eps_s*np.cos(2.*phi), eps_s*np.sin(2.*phi)
+q = (1+abs(eps_s))/(1-abs(eps_s))
+# .. .. Let us calculate the "observed q" i.e. the q that Lenser will reconstruct.
+#        This q will be different from the above q, because nonzero shear will add
+#        to the intrinsic ellipticity.
 eps1 = eps_s1 + gamma1
 eps2 = eps_s2 + gamma2
 eps = np.sqrt(eps1**2. + eps2**2.)
 q_obs = (1+abs(eps))/(1-abs(eps))
-q = (1+abs(eps_s))/(1-abs(eps_s))
+# .. .. Now let us get the "observed" phi.  By the same token as for q, the orientation
+#        angle will be different from the intrinsic one in the presence of nonzero shear
+phi_obs = np.arctan2(eps2,eps1)/2
 # .. rs
 rs = a/(np.sqrt(((1+q_obs**2.)/2)))*np.sqrt(gamma(2.*ns)/gamma(4.*ns))
 
@@ -149,10 +155,10 @@ myLens = Lens(psi2=[psi11,psi12,psi22],psi3=[psi111,psi112,psi122,psi222])
 myGalaxy = Galaxy(xc,yc,ns,rs,q,phi,galaxyLens=myLens)
 
 # Simulate a real galaxy image
-myImage=myGalaxy.generateImage(nx=Nx,ny=Ny,lens=True,I0=I0,noise1=noise1,noise2=noise2,background=background,seed=0) 
+myImage = myGalaxy.generateImage(nx=Nx,ny=Ny,lens=True,I0=I0,noise1=noise1,noise2=noise2,background=background,seed=0) 
 
 # Save image to a FITS file
-hdu = fits.PrimaryHDU(myImage.getMap())
+hdu = fits.PrimaryHDU(myImage.getMap('data'))
 hdu.writeto('Simulated_Galaxy.fits',overwrite=True)
 
 # Save noisemap to a FITS file
@@ -160,35 +166,50 @@ hdu_noisemap = fits.PrimaryHDU(myImage.getMap(type='noise'))
 hdu_noisemap.writeto('Simulated_Galaxy_rms.fits',overwrite=True)
 
 # Reset the parameters to their default values
-aimModel().empty
+aimModel(myImage).empty()
 
 # Read in image from FITS file
-myImage = Image('Simulated_Galaxy.fits')
-myImage.plot(show=True)
+path_to_image = 'Simulated_Galaxy.fits'
+f = FITS(path_to_image)
+dat = f.get_FITS('data')
+rms = f.get_FITS('noise')
+seg = f.get_FITS('segmask')
+bg = f.get_FITS('bgmask')
+
+# Create an image instance
+myImage = Image(name = 'Simulated_Galaxy', datamap = dat, noisemap = rms, segmask = seg, bgmask = bg)
+myImage.plot(save=False, show=True)
 
 # Initialize AIM model
 myModel = aimModel(myImage)
 
 # Generate mask and plot it
-myImage.generateMask(subtractBackground=True)
-myImage.plot(type='mask',show=True)
+myImage.generateEllipticalMask(subtractBackground=True)
+myImage.plot(type='totalmask', save=False, show=True)
 
 # Plot noisemap
-myImage.plot(type='noise',show=True)
+myImage.plot(type='noise',save=False, show=True)
 
 # Run local minimization
 myModel.runLocalMinRoutine()
 
-# Check for a realistic fit
-myModel.checkFit()
-
-# Return 1sigma errors on parameters from chisquared best-fit
-myModel.getParErrors()
-
 # Plot the simulated galaxy, the best-fit model, and the difference between the two
-myModel.make_plot_compare(show=True)
+myModel.make_plot_compare(save=False, show=True)
 # Zoom in for visual comparison
-myModel.make_plot_compare(zoom=True,show=True)
+myModel.make_plot_compare(zoom=True, save=False, show=True)
 
 # Reset the parameters to their default values
 myModel.empty()
+
+# Compare to input parameters
+print('Compare Lenser fit to input parameters:')
+print('... [ Input xc = ', xc, ' ]')
+print('... [ Input yc = ', yc, ' ]')
+print('... [ Input ns = ', ns, ' ]')
+print('... [ Input rs = ', rs, ' ]')
+print('... [ Input q = ', q_obs, ' ]')
+print('... [ Input phi = ', phi_obs, ' ]')
+print('... [ Input psi,111 = ', psi111, ' ]')
+print('... [ Input psi,112 = ', psi112, ' ]')
+print('... [ Input psi,122 = ', psi122, ' ]')
+print('... [ Input psi,222 = ', psi222, ' ]')

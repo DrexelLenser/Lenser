@@ -62,7 +62,6 @@ psi112 = (1./2.)*(F2 + G2)
 psi122 = (1./2.)*(F1 - G1)
 # .. psi,222
 psi222 = (1./2.)*(3.*F2 - G2)
-print(psi111,psi112,psi122,psi222)
 # Shape parameters
 # .. Centroid (will be dithered within a pixel in Covariance)
 xc = 0.5
@@ -106,7 +105,7 @@ Cov4 = Covariance(Nx=Nx, Ny=Ny,
                   psi3=[psi111,psi112,psi122,psi222],
                   marg=np.array((1,1,1,1,1,1,0,0,0,1,1,1,1)),
                   I0=I0, noise1=noise1, noise2=noise2, background=background,
-                  N_iter=1000,
+                  N_iter=100,
                   fid_params=fid_params,
                   stamp_col_label='EFIGI-like_with_lensing')
 # Simulate the stamp collection
